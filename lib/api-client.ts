@@ -18,12 +18,11 @@ export interface PoolListItem {
 
 export async function searchPools(
   appToken: string,
-  params: { chainId: number; protocol: string; token?: string; poolId?: string; extraQuote?: string[] },
+  params: { chainId: number; protocol: string; token?: string; poolId?: string },
 ): Promise<PoolListItem[]> {
   const qs = new URLSearchParams({ chainId: String(params.chainId), protocol: params.protocol });
   if (params.token) qs.set('token', params.token);
   if (params.poolId) qs.set('poolId', params.poolId);
-  if (params.extraQuote?.length) qs.set('extraQuote', params.extraQuote.join(','));
   const res = await apiFetch(appToken, `/api/pools?${qs.toString()}`);
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? 'Failed to search pools');

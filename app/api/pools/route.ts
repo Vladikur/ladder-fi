@@ -12,11 +12,6 @@ const querySchema = z.object({
   protocol: z.string().min(1),
   token: addressSchema.optional(),
   poolId: poolIdSchema.optional(),
-  extraQuote: z
-    .string()
-    .optional()
-    .transform((v) => (v ? v.split(',').map((s) => s.trim()).filter(Boolean) : []))
-    .pipe(z.array(addressSchema)),
 });
 
 export async function GET(request: Request) {
@@ -32,7 +27,7 @@ export async function GET(request: Request) {
   if (!parsed.success) {
     return jsonResponse({ error: 'Invalid query', issues: parsed.error.issues }, { status: 400 });
   }
-  const { chainId, protocol: protocolKey, token, poolId, extraQuote } = parsed.data;
+  const { chainId, protocol: protocolKey, token, poolId } = parsed.data;
 
   if (!token && !poolId) {
     return jsonResponse({ error: 'Provide either ?token= or ?poolId=' }, { status: 400 });
@@ -48,8 +43,7 @@ export async function GET(request: Request) {
       return jsonResponse({ pools: [{ ref, state }] });
     }
 
-    const candidates = [...chain.quoteCandidates, ...extraQuote];
-    const refs = await adapter.findPools(token!, candidates);
+    const refs = await adapter.findPools(token!, chain.quoteCandidates);
     const pools = await Promise.all(refs.map(async (ref) => ({ ref, state: await adapter.getPoolState(ref) })));
 
     // Sort by on-chain liquidity descending, highest first.

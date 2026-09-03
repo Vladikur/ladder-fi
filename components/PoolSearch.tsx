@@ -16,8 +16,6 @@ export function PoolSearch({
   explorerUrl,
   token,
   onTokenChange,
-  extraQuote,
-  onExtraQuoteChange,
   onSelect,
 }: {
   chainId: number;
@@ -25,8 +23,6 @@ export function PoolSearch({
   explorerUrl: string;
   token: string;
   onTokenChange: (value: string) => void;
-  extraQuote: string;
-  onExtraQuoteChange: (value: string) => void;
   onSelect: (pool: PoolListItem) => void;
 }) {
   const appToken = useAppToken();
@@ -40,11 +36,7 @@ export function PoolSearch({
     setLoading(true);
     setError(null);
     try {
-      const extra = extraQuote
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
-      const pools = await searchPools(appToken, { chainId, protocol, token: token.trim(), extraQuote: extra });
+      const pools = await searchPools(appToken, { chainId, protocol, token: token.trim() });
       setResults(pools);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Search failed');
@@ -91,15 +83,6 @@ export function PoolSearch({
             onChange={(e) => onTokenChange(e.target.value)}
             placeholder="0x..."
             className="w-96 rounded border border-neutral-700 bg-neutral-950 px-2 py-1 font-mono text-xs"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          Extra quote candidates (comma-separated)
-          <input
-            value={extraQuote}
-            onChange={(e) => onExtraQuoteChange(e.target.value)}
-            placeholder="0x..., 0x..."
-            className="w-72 rounded border border-neutral-700 bg-neutral-950 px-2 py-1 font-mono text-xs"
           />
         </label>
         <button type="submit" disabled={loading || !token} className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium disabled:opacity-40">

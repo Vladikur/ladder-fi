@@ -59,17 +59,15 @@ function PageInner() {
     searchParams.get('protocol') === 'uniswap-v3' ? 'uniswap-v3' : 'uniswap-v4',
   );
   const [searchToken, setSearchToken] = useState(() => searchParams.get('token') ?? '');
-  const [searchExtraQuote, setSearchExtraQuote] = useState(() => searchParams.get('extraQuote') ?? '');
 
-  // Mirror protocol/token/extraQuote into the URL so a reload doesn't lose them -
+  // Mirror protocol/token into the URL so a reload doesn't lose them -
   // replace (not push) so typing in the search box doesn't spam browser history.
   useEffect(() => {
     const params = new URLSearchParams();
     params.set('protocol', protocol);
     if (searchToken) params.set('token', searchToken);
-    if (searchExtraQuote) params.set('extraQuote', searchExtraQuote);
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-  }, [protocol, searchToken, searchExtraQuote, pathname, router]);
+  }, [protocol, searchToken, pathname, router]);
 
   const [pool, setPool] = useState<PoolListItem | null>(null);
   const [config, setConfig] = useState<LadderConfig | null>(null);
@@ -201,8 +199,6 @@ function PageInner() {
           explorerUrl={EXPLORER_URL}
           token={searchToken}
           onTokenChange={setSearchToken}
-          extraQuote={searchExtraQuote}
-          onExtraQuoteChange={setSearchExtraQuote}
           onSelect={handleSelectPool}
         />
 
