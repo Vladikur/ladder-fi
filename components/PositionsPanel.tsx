@@ -45,6 +45,32 @@ export function PositionsPanel({ chainId, protocol, poolId }: { chainId: number;
   const firstRow = rows[0];
   const currentPrice = firstRow ? tickToPrice(firstRow.currentTick, firstRow.token0.decimals, firstRow.token1.decimals) : null;
 
+  const valued = rows.map((r) => {
+    const liquidityUsd = estimatePositionLiquidityUsd(
+      {
+        token0: r.token0,
+        token1: r.token1,
+        fee: r.fee,
+        tickSpacing: r.ref.tickSpacing,
+        tickLower: r.tickLower,
+        tickUpper: r.tickUpper,
+        currentTick: r.currentTick,
+        liquidity: r.liquidity,
+      },
+      notionalToken,
+    );
+    const feesUsd = estimateFeesUsd(
+      { token0: r.token0, token1: r.token1, currentTick: r.currentTick, tokensOwed0: r.tokensOwed0, tokensOwed1: r.tokensOwed1 },
+      notionalToken,
+    );
+    const yieldPct = liquidityUsd !== null && feesUsd !== null && liquidityUsd > 0 ? (feesUsd / liquidityUsd) * 100 : null;
+    return { row: r, liquidityUsd, feesUsd, yieldPct };
+  });
+
+  const totalLiquidityUsd = valued.reduce((sum, v) => (v.liquidityUsd !== null ? sum + v.liquidityUsd : sum), 0);
+  const totalFeesUsd = valued.reduce((sum, v) => (v.feesUsd !== null ? sum + v.feesUsd : sum), 0);
+  const aggregateYieldPct = totalLiquidityUsd > 0 ? (totalFeesUsd / totalLiquidityUsd) * 100 : null;
+
   function toggle(tokenId: string) {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -115,6 +141,7 @@ export function PositionsPanel({ chainId, protocol, poolId }: { chainId: number;
             {aggregate.workedFraction === null ? 'n/a' : `${(Number(aggregate.workedFraction) * 100).toFixed(0)}%`} ({String(aggregate.workedKnown)}{' '}
             known)
           </span>
+          <span>Current yield: {aggregateYieldPct !== null ? `${aggregateYieldPct.toFixed(2)}%` : 'n/a'}</span>
         </div>
       )}
 
@@ -134,10 +161,11 @@ export function PositionsPanel({ chainId, protocol, poolId }: { chainId: number;
             <th>Worked</th>
             <th>Liquidity</th>
             <th>Fees owed</th>
+            <th>Yield</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
+          {valued.map(({ row: r, liquidityUsd, feesUsd, yieldPct }) => (
             <tr key={r.tokenId.toString()} className="border-t border-neutral-800">
               <td>
                 <input type="checkbox" checked={selected.has(r.tokenId.toString())} onChange={() => toggle(r.tokenId.toString())} />
@@ -153,38 +181,14 @@ export function PositionsPanel({ chainId, protocol, poolId }: { chainId: number;
               <td>{r.rangeStatus}</td>
               <td>{r.label ?? '-'}</td>
               <td>{r.worked === null ? '-' : r.worked ? 'yes' : 'no'}</td>
-              <td className="font-mono">
-                {(() => {
-                  const usd = estimatePositionLiquidityUsd(
-                    {
-                      token0: r.token0,
-                      token1: r.token1,
-                      fee: r.fee,
-                      tickSpacing: r.ref.tickSpacing,
-                      tickLower: r.tickLower,
-                      tickUpper: r.tickUpper,
-                      currentTick: r.currentTick,
-                      liquidity: r.liquidity,
-                    },
-                    notionalToken,
-                  );
-                  return usd !== null ? formatUsd(usd) : r.liquidity.toString();
-                })()}
-              </td>
-              <td className="font-mono">
-                {(() => {
-                  const usd = estimateFeesUsd(
-                    { token0: r.token0, token1: r.token1, currentTick: r.currentTick, tokensOwed0: r.tokensOwed0, tokensOwed1: r.tokensOwed1 },
-                    notionalToken,
-                  );
-                  return usd !== null ? formatUsd(usd) : `${r.tokensOwed0} / ${r.tokensOwed1}`;
-                })()}
-              </td>
+              <td className="font-mono">{liquidityUsd !== null ? formatUsd(liquidityUsd) : r.liquidity.toString()}</td>
+              <td className="font-mono">{feesUsd !== null ? formatUsd(feesUsd) : `${r.tokensOwed0} / ${r.tokensOwed1}`}</td>
+              <td className="font-mono">{yieldPct !== null ? `${yieldPct.toFixed(2)}%` : '-'}</td>
             </tr>
           ))}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={9} className="py-2 text-neutral-500">
+              <td colSpan={10} className="py-2 text-neutral-500">
                 No positions found.
               </td>
             </tr>
