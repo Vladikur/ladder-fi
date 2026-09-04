@@ -40,8 +40,15 @@ export function sliceRange(input: RangeSliceInput): RangeSliceResult {
  * Splits the sliced [tickLowerG, actualTickUpperG] range into N bins - binWidth wide,
  * except the remainderSpacings bins nearest tickUpperG which are one tickSpacing wider
  * (see sliceRange) - then classifies each as 'upper' (ask, pure token0) or 'lower'
- * (bid, pure token1) relative to the active tick, dropping any bin that overlaps the
- * configurable gap around the active price ("Активный бин пропускается").
+ * (bid, pure token1) relative to the active tick.
+ *
+ * A bin overlapping the configurable gap around the active price is trimmed to the
+ * gap's edge rather than dropped outright, so the side(s) nearest the active price keep
+ * as much of the requested range as the gap allows instead of losing a whole bin's
+ * width to it ("Активный бин обрезается по границе гэпа, а не пропускается целиком"). A
+ * bin wide enough to span clean across the gap yields both a trimmed bid piece below it
+ * and a trimmed ask piece above it. Only a bin that lands entirely inside the gap - too
+ * narrow to reach either edge - has nothing left to keep and is dropped.
  *
  * Bins on each side are re-indexed by distance from the active tick, 0 = nearest.
  */
@@ -58,6 +65,7 @@ export function buildLadder(input: LadderBuildInput): LadderBuildResult {
   const upperRaw: Omit<BinSpec, 'index'>[] = [];
   const lowerRaw: Omit<BinSpec, 'index'>[] = [];
   let dropped = 0;
+  let trimmed = 0;
 
   // The remainderSpacings bins nearest tickUpperG (highest j) each get one extra
   // tickSpacing so the cumulative width exactly consumes the leftover from sliceRange.
@@ -70,15 +78,31 @@ export function buildLadder(input: LadderBuildInput): LadderBuildResult {
     } else if (tickUpper <= gapLowerBound) {
       lowerRaw.push({ side: 'lower', tickLower, tickUpper });
     } else {
-      dropped++;
+      let kept = false;
+      if (tickLower < gapLowerBound) {
+        lowerRaw.push({ side: 'lower', tickLower, tickUpper: gapLowerBound });
+        kept = true;
+      }
+      if (tickUpper > gapUpperBound) {
+        upperRaw.push({ side: 'upper', tickLower: gapUpperBound, tickUpper });
+        kept = true;
+      }
+      if (kept) trimmed++;
+      else dropped++;
     }
     tickLower = tickUpper;
   }
 
+  if (trimmed > 0) {
+    warnings.push({
+      code: 'bin-trimmed',
+      message: `${trimmed} bin(s) overlapping the active-price gap were trimmed to its edge instead of dropped.`,
+    });
+  }
   if (dropped > 0) {
     warnings.push({
       code: 'n-reduced',
-      message: `${dropped} bin(s) overlapping the active-price gap were dropped; ${upperRaw.length} ask + ${lowerRaw.length} bid bins remain.`,
+      message: `${dropped} bin(s) fully inside the active-price gap were dropped; ${upperRaw.length} ask + ${lowerRaw.length} bid bins remain.`,
     });
   }
 

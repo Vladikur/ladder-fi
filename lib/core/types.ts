@@ -74,6 +74,7 @@ export interface LadderBuildResult {
 
 export type PlanWarningCode =
   | 'n-reduced'
+  | 'bin-trimmed'
   | 'dust-amount'
   | 'bin-width-floor';
 
