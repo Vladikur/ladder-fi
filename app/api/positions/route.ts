@@ -7,6 +7,7 @@ import { resolvePoolRef } from '@/lib/adapters/resolve-pool';
 import { getSigner } from '@/lib/signer/local-key';
 import { loadMintedPositionLabels } from '@/lib/guards/audit';
 import { poolIdSchema } from '@/lib/schemas';
+import { describeError } from '@/lib/rpc/errors';
 
 const querySchema = z.object({
   chainId: z.coerce.number().int().positive(),
@@ -66,6 +67,6 @@ export async function GET(request: Request) {
 
     return jsonResponse({ positions, aggregate });
   } catch (err) {
-    return jsonResponse({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
+    return jsonResponse({ error: describeError(err) }, { status: 500 });
   }
 }

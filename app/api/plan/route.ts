@@ -5,6 +5,7 @@ import { assertRequestAuthorized, CsrfError } from '@/lib/guards/csrf';
 import { resolvePlan } from '@/lib/services/plan';
 import { RangeTooNarrowError } from '@/lib/core';
 import { addressSchema, poolIdSchema, decimalStringSchema as decimalString } from '@/lib/schemas';
+import { describeError } from '@/lib/rpc/errors';
 
 const bodySchema = z.object({
   chainId: z.number().int().positive(),
@@ -66,6 +67,6 @@ export async function POST(request: Request) {
     if (err instanceof RangeTooNarrowError) {
       return jsonResponse({ error: err.message, code: 'range-too-narrow', maxN: err.maxN }, { status: 400 });
     }
-    return jsonResponse({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
+    return jsonResponse({ error: describeError(err) }, { status: 500 });
   }
 }

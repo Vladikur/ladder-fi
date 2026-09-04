@@ -38,7 +38,10 @@ export function getPublicClient(chainId: number): PublicClient {
       contracts: chain.multicall3 ? { multicall3: { address: chain.multicall3 } } : undefined,
     },
     transport: http(rpcUrl, {
-      batch: { batchSize: 25, wait: 20 },
+      // Smaller batches: this RPC node has been observed truncating large JSON-RPC
+      // batch responses under load, which crashes viem's batch scheduler (it indexes
+      // the response array by request order and assumes one entry per request).
+      batch: { batchSize: 10, wait: 20 },
       retryCount: 4,
       retryDelay: 300, // viem applies exponential backoff with jitter on top of this base
       timeout: 15_000,

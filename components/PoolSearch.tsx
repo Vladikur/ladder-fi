@@ -89,6 +89,7 @@ export function PoolSearch({
   }, []);
 
   async function runSearch(tokenOverride?: string) {
+    if (loading) return;
     const value = (tokenOverride ?? token).trim();
     setLoading(true);
     setError(null);
@@ -106,6 +107,7 @@ export function PoolSearch({
 
   async function runManualLookup(e?: React.FormEvent, poolOverride?: string) {
     e?.preventDefault();
+    if (loading) return;
     const value = (poolOverride ?? manualPool).trim();
     setLoading(true);
     setError(null);

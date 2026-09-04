@@ -38,7 +38,11 @@ export class UniswapV3ForkAdapter implements ILiquidityAdapter {
       this.protocol.feeTiers.map((tier) => ({ quote, fee: tier.fee, tickSpacing: tier.tickSpacing })),
     );
 
-    const results = await Promise.all(
+    // allSettled: one candidate's getPool() failing (flaky RPC) shouldn't blank out
+    // every other fee-tier/quote-token candidate for this search. But if EVERY lookup
+    // failed (e.g. the RPC node is in one of its bad windows right now), that's not
+    // "no pools exist" - surface the error instead of silently reporting zero results.
+    const settled = await Promise.allSettled(
       lookups.map(({ quote, fee, tickSpacing }) =>
         this.client
           .readContract({
@@ -50,6 +54,10 @@ export class UniswapV3ForkAdapter implements ILiquidityAdapter {
           .then((addr) => ({ addr, quote, fee, tickSpacing })),
       ),
     );
+    const results = settled.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
+    if (results.length === 0 && settled.some((r) => r.status === 'rejected')) {
+      throw (settled.find((r): r is PromiseRejectedResult => r.status === 'rejected')!).reason;
+    }
 
     return results
       .filter((r) => r.addr.toLowerCase() !== zeroAddress)

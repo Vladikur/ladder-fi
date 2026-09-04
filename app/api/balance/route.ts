@@ -6,6 +6,7 @@ import { addressSchema } from '@/lib/schemas';
 import { getPublicClient } from '@/lib/rpc/client';
 import { erc20Abi } from '@/lib/adapters/abis';
 import { getSigner } from '@/lib/signer/local-key';
+import { describeError } from '@/lib/rpc/errors';
 
 const querySchema = z.object({
   chainId: z.coerce.number().int().positive(),
@@ -36,6 +37,6 @@ export async function GET(request: Request) {
     ]);
     return jsonResponse({ owner: signer.address, token, balance, decimals });
   } catch (err) {
-    return jsonResponse({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
+    return jsonResponse({ error: describeError(err) }, { status: 500 });
   }
 }

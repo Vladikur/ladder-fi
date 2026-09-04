@@ -2,6 +2,7 @@
 // shapes, so nothing server-side ends up in the browser bundle.
 import type { PlanResult, Strategy, DepositMode } from '@/lib/core';
 import type { PoolRef, PoolState, PositionView } from '@/lib/adapters/types';
+import { RPC_HICCUP_MESSAGE } from '@/lib/rpc/hiccup';
 
 async function apiFetch(appToken: string, path: string, init?: RequestInit): Promise<Response> {
   const res = await fetch(path, {
@@ -9,6 +10,20 @@ async function apiFetch(appToken: string, path: string, init?: RequestInit): Pro
     headers: { ...init?.headers, 'x-app-token': appToken },
   });
   return res;
+}
+
+/** One silent retry for the chain's known-flaky-RPC hiccup, for reads only (never wrap
+ *  execute/collect/withdraw - those submit transactions and must not be retried blindly). */
+async function withRpcHiccupRetry<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err instanceof Error && err.message === RPC_HICCUP_MESSAGE) {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      return fn();
+    }
+    throw err;
+  }
 }
 
 export interface PoolListItem {
@@ -20,13 +35,15 @@ export async function searchPools(
   appToken: string,
   params: { chainId: number; protocol: string; token?: string; poolId?: string },
 ): Promise<PoolListItem[]> {
-  const qs = new URLSearchParams({ chainId: String(params.chainId), protocol: params.protocol });
-  if (params.token) qs.set('token', params.token);
-  if (params.poolId) qs.set('poolId', params.poolId);
-  const res = await apiFetch(appToken, `/api/pools?${qs.toString()}`);
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? 'Failed to search pools');
-  return data.pools;
+  return withRpcHiccupRetry(async () => {
+    const qs = new URLSearchParams({ chainId: String(params.chainId), protocol: params.protocol });
+    if (params.token) qs.set('token', params.token);
+    if (params.poolId) qs.set('poolId', params.poolId);
+    const res = await apiFetch(appToken, `/api/pools?${qs.toString()}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error ?? 'Failed to search pools');
+    return data.pools;
+  });
 }
 
 export interface PlanRequestParams {
@@ -50,14 +67,16 @@ export async function getPlan(
   appToken: string,
   params: PlanRequestParams,
 ): Promise<{ ref: PoolRef; pool: PoolState; plan: PlanResult }> {
-  const res = await apiFetch(appToken, '/api/plan', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(params),
+  return withRpcHiccupRetry(async () => {
+    const res = await apiFetch(appToken, '/api/plan', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error ?? 'Failed to compute plan');
+    return data;
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? 'Failed to compute plan');
-  return data;
 }
 
 export type ExecuteEvent = { type: string; [key: string]: unknown };
@@ -104,12 +123,14 @@ export async function listPositions(
   appToken: string,
   params: { chainId: number; protocol: string; poolId?: string },
 ): Promise<{ positions: (PositionView & { rangeStatus: string; worked: boolean | null; label: string | null })[]; aggregate: Record<string, unknown> }> {
-  const qs = new URLSearchParams({ chainId: String(params.chainId), protocol: params.protocol });
-  if (params.poolId) qs.set('poolId', params.poolId);
-  const res = await apiFetch(appToken, `/api/positions?${qs.toString()}`);
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? 'Failed to load positions');
-  return data;
+  return withRpcHiccupRetry(async () => {
+    const qs = new URLSearchParams({ chainId: String(params.chainId), protocol: params.protocol });
+    if (params.poolId) qs.set('poolId', params.poolId);
+    const res = await apiFetch(appToken, `/api/positions?${qs.toString()}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error ?? 'Failed to load positions');
+    return data;
+  });
 }
 
 export async function collectPositions(
@@ -130,11 +151,13 @@ export async function getBalance(
   appToken: string,
   params: { chainId: number; token: string },
 ): Promise<{ owner: string; token: string; balance: string; decimals: number }> {
-  const qs = new URLSearchParams({ chainId: String(params.chainId), token: params.token });
-  const res = await apiFetch(appToken, `/api/balance?${qs.toString()}`);
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? 'Failed to load balance');
-  return data;
+  return withRpcHiccupRetry(async () => {
+    const qs = new URLSearchParams({ chainId: String(params.chainId), token: params.token });
+    const res = await apiFetch(appToken, `/api/balance?${qs.toString()}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error ?? 'Failed to load balance');
+    return data;
+  });
 }
 
 export async function withdrawPositions(

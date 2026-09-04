@@ -6,6 +6,7 @@ import { getChain } from '@/lib/registry/resolve';
 import { getAdapter } from '@/lib/adapters';
 import { resolvePoolRef } from '@/lib/adapters/resolve-pool';
 import { addressSchema, poolIdSchema } from '@/lib/schemas';
+import { describeError } from '@/lib/rpc/errors';
 
 const querySchema = z.object({
   chainId: z.coerce.number().int().positive(),
@@ -44,13 +45,21 @@ export async function GET(request: Request) {
     }
 
     const refs = await adapter.findPools(token!, chain.quoteCandidates);
-    const pools = await Promise.all(refs.map(async (ref) => ({ ref, state: await adapter.getPoolState(ref) })));
+    // allSettled: one pool's state read failing (flaky RPC) shouldn't blank out the
+    // whole result set - return whichever pools resolved successfully. But if every
+    // pool's state read failed, that's not "zero pools" - surface the error so the
+    // client's retry/error handling kicks in instead of silently reporting nothing.
+    const settled = await Promise.allSettled(refs.map(async (ref) => ({ ref, state: await adapter.getPoolState(ref) })));
+    const pools = settled.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
+    if (pools.length === 0 && refs.length > 0 && settled.some((r) => r.status === 'rejected')) {
+      throw (settled.find((r): r is PromiseRejectedResult => r.status === 'rejected')!).reason;
+    }
 
     // Sort by on-chain liquidity descending, highest first.
     pools.sort((a, b) => (b.state.liquidity > a.state.liquidity ? 1 : b.state.liquidity < a.state.liquidity ? -1 : 0));
 
     return jsonResponse({ pools });
   } catch (err) {
-    return jsonResponse({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
+    return jsonResponse({ error: describeError(err) }, { status: 500 });
   }
 }
