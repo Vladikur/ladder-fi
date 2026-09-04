@@ -12,7 +12,7 @@ export function PreviewChart({ pool, plan }: { pool: RawPoolState; plan: PlanRes
   const sorted = [...plan.bins].sort((a, b) => a.tickLower - b.tickLower);
   const data = sorted.map((bin) => ({
     tick: bin.tickLower,
-    priceLower: bin.priceLower,
+    priceLower: truncateDecimals(bin.priceLower, 6),
     value: bin.side === 'upper' ? Number(formatUnits(bin.amount0, pool.token0.decimals)) : Number(formatUnits(bin.amount1, pool.token1.decimals)),
     label: bin.label,
   }));
@@ -25,13 +25,21 @@ export function PreviewChart({ pool, plan }: { pool: RawPoolState; plan: PlanRes
       <div className="h-64">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data}>
-            <XAxis dataKey="tick" tick={{ fontSize: 10 }} />
+            <XAxis dataKey="priceLower" tick={{ fontSize: 10 }} angle={-40} textAnchor="end" height={50} />
             <YAxis tick={{ fontSize: 10 }} />
             <Tooltip
+              contentStyle={{ backgroundColor: '#171717', borderColor: '#404040' }}
+              labelStyle={{ color: '#e5e5e5' }}
+              itemStyle={{ color: '#e5e5e5' }}
               formatter={(value: number, _name, item) => [value, item.payload.label === 'ask' ? 'ask (base)' : 'bid (quote)']}
-              labelFormatter={(tick) => `tick ${tick}`}
+              labelFormatter={(_price, item) => `price ${item?.[0]?.payload.priceLower} (tick ${item?.[0]?.payload.tick})`}
             />
-            <ReferenceLine x={pool.tick} stroke="#f59e0b" strokeDasharray="4 4" label={{ value: 'price', fontSize: 10, fill: '#f59e0b' }} />
+            <ReferenceLine
+              x={truncateDecimals(plan.currentPrice, 6)}
+              stroke="#f59e0b"
+              strokeDasharray="4 4"
+              label={{ value: 'price', fontSize: 10, fill: '#f59e0b' }}
+            />
             <Bar dataKey="value">
               {data.map((d, i) => (
                 <Cell key={i} fill={d.label === 'ask' ? ASK_COLOR : BID_COLOR} />
