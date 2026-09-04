@@ -487,10 +487,12 @@ export class UniswapV4Adapter implements ILiquidityAdapter {
     });
   }
 
-  /** decreaseLiquidity (or burn, at bps=10000) -> take, one modifyLiquidities call per position. */
+  /** decreaseLiquidity (or burn, at bps=10000) -> take per position, batched across up to
+   *  maxPositionsPerTx positions into one modifyLiquidities call per chunk (same chunking as buildMintCalls). */
   async buildWithdrawCalls(owner: Address, tokenIds: bigint[], bps: number): Promise<Call[][]> {
     if (bps <= 0 || bps > 10_000) throw new Error('bps must be in (0, 10000]');
     const deadline = BigInt(Math.floor(Date.now() / 1000) + 300);
+    const full = bps === 10_000;
 
     const [infos, liquidities] = await Promise.all([
       Promise.all(
@@ -505,21 +507,36 @@ export class UniswapV4Adapter implements ILiquidityAdapter {
       ),
     ]);
 
-    return tokenIds.map((tokenId, i) => {
+    const perPosition = tokenIds.map((tokenId, i) => {
       const poolKey = infos[i]![0];
       const liquidity = liquidities[i]!;
-      const full = bps === 10_000;
       const liquidityToRemove = (liquidity * BigInt(bps)) / 10_000n;
 
-      const actions = encodePacked(['uint8', 'uint8'], [full ? ACTIONS.BURN_POSITION : ACTIONS.DECREASE_LIQUIDITY, ACTIONS.TAKE_PAIR]);
       const firstParams = full
         ? encodeAbiParameters(burnParamsAbiTypes, [tokenId, 0n, 0n, '0x'])
         : encodeAbiParameters(decreaseParamsAbiTypes, [tokenId, liquidityToRemove, 0n, 0n, '0x']);
       const takeParams = encodeAbiParameters(takePairAbiTypes, [poolKey.currency0, poolKey.currency1, owner]);
-      const unlockData = encodeAbiParameters(unlockDataAbiTypes, [actions, [firstParams, takeParams]]);
-      const data = encodeFunctionData({ abi: positionManagerV4Abi, functionName: 'modifyLiquidities', args: [unlockData, deadline] });
-      return [{ to: this.positionManager, data }];
+      return {
+        actionCodes: [full ? ACTIONS.BURN_POSITION : ACTIONS.DECREASE_LIQUIDITY, ACTIONS.TAKE_PAIR],
+        params: [firstParams, takeParams],
+      };
     });
+
+    const chunkSize = this.protocol.capabilities.maxPositionsPerTx;
+    const chunks: Call[][] = [];
+    for (let i = 0; i < perPosition.length; i += chunkSize) {
+      const slice = perPosition.slice(i, i + chunkSize);
+      const actionCodes = slice.flatMap((p) => p.actionCodes);
+      const params = slice.flatMap((p) => p.params);
+      const actions = encodePacked(
+        actionCodes.map(() => 'uint8'),
+        actionCodes,
+      );
+      const unlockData = encodeAbiParameters(unlockDataAbiTypes, [actions, params]);
+      const data = encodeFunctionData({ abi: positionManagerV4Abi, functionName: 'modifyLiquidities', args: [unlockData, deadline] });
+      chunks.push([{ to: this.positionManager, data }]);
+    }
+    return chunks;
   }
 }
 

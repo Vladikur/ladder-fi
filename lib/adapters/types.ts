@@ -61,6 +61,7 @@ export interface ILiquidityAdapter {
   buildMintCalls(plan: MintPlan): Promise<Call[][]>;
   listPositions(owner: Address, ref?: PoolRef): Promise<PositionView[]>;
   buildCollectCalls(owner: Address, tokenIds: bigint[]): Promise<Call[][]>;
+  /** already chunked (see buildMintCalls) - each inner array batches up to maxPositionsPerTx tokenIds into one transaction */
   buildWithdrawCalls(owner: Address, tokenIds: bigint[], bps: number): Promise<Call[][]>;
   /** token0/token1/tickLower/tickUpper for a position, for audit-log purposes (collect/withdraw routes) */
   getPositionSummary(tokenId: bigint): Promise<{ token0: Address; token1: Address; tickLower: number; tickUpper: number }>;

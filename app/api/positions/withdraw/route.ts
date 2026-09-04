@@ -8,6 +8,7 @@ import { executionQueue, ConcurrentExecutionError } from '@/lib/signer/queue';
 import { GuardViolationError } from '@/lib/guards/limits';
 import { getServerEnv } from '@/lib/env';
 import { appendAudit } from '@/lib/guards/audit';
+import { getProtocol } from '@/lib/registry/protocols';
 
 const bodySchema = z.object({
   chainId: z.number().int().positive(),
@@ -49,29 +50,36 @@ export async function POST(request: Request) {
     const results = await executionQueue.run(signer.address, async () => {
       const adapter = getAdapter(input.chainId, input.protocol);
 
+      const chunkSize = getProtocol(input.chainId, input.protocol).capabilities.maxPositionsPerTx;
       const chunks = await adapter.buildWithdrawCalls(signer.address, input.tokenIds.map(BigInt), input.bps);
       const out: { tokenId: string; hash: string; success: boolean }[] = [];
       for (let i = 0; i < chunks.length; i++) {
-        const tokenId = input.tokenIds[i]!;
-        const position = await adapter.getPositionSummary(BigInt(tokenId));
+        const tokenIdsInChunk = input.tokenIds.slice(i * chunkSize, (i + 1) * chunkSize);
+        // read before sending - a full withdraw (bps=10000) burns the NFT, after which positions()/getPoolAndPositionInfo() revert
+        const positions = await Promise.all(tokenIdsInChunk.map((tokenId) => adapter.getPositionSummary(BigInt(tokenId))));
         const hash = await signer.sendCalls(input.chainId, chunks[i]!);
         const receipt = await signer.waitForReceipt(input.chainId, hash);
-        appendAudit({
-          timestamp: new Date().toISOString(),
-          chainId: input.chainId,
-          protocol: input.protocol,
-          nonce: Number(receipt.transactionIndex),
-          hash,
-          operation: 'withdraw',
-          token0: position.token0,
-          token1: position.token1,
-          tickLower: position.tickLower,
-          tickUpper: position.tickUpper,
-          amount0: '0',
-          amount1: '0',
-          result: receipt.status === 'success' ? 'success' : 'failure',
-        });
-        out.push({ tokenId, hash, success: receipt.status === 'success' });
+        const success = receipt.status === 'success';
+        for (let j = 0; j < tokenIdsInChunk.length; j++) {
+          const tokenId = tokenIdsInChunk[j]!;
+          const position = positions[j]!;
+          appendAudit({
+            timestamp: new Date().toISOString(),
+            chainId: input.chainId,
+            protocol: input.protocol,
+            nonce: Number(receipt.transactionIndex),
+            hash,
+            operation: 'withdraw',
+            token0: position.token0,
+            token1: position.token1,
+            tickLower: position.tickLower,
+            tickUpper: position.tickUpper,
+            amount0: '0',
+            amount1: '0',
+            result: success ? 'success' : 'failure',
+          });
+          out.push({ tokenId, hash, success });
+        }
       }
       return out;
     });

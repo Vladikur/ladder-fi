@@ -297,7 +297,8 @@ export class UniswapV3ForkAdapter implements ILiquidityAdapter {
     ]);
   }
 
-  /** decreaseLiquidity -> collect -> burn, one multicall per position ("одним multicall") */
+  /** decreaseLiquidity -> collect -> burn per position, batched across up to
+   *  maxPositionsPerTx positions into one multicall per chunk (same chunking as buildMintCalls). */
   async buildWithdrawCalls(owner: Address, tokenIds: bigint[], bps: number): Promise<Call[][]> {
     if (bps <= 0 || bps > 10_000) throw new Error('bps must be in (0, 10000]');
     const maxUint128 = (1n << 128n) - 1n;
@@ -316,7 +317,7 @@ export class UniswapV3ForkAdapter implements ILiquidityAdapter {
       ),
     );
 
-    return positions.map(({ tokenId, liquidity }) => {
+    const callsPerPosition: Hex[][] = positions.map(({ tokenId, liquidity }) => {
       const liquidityToRemove = (liquidity * BigInt(bps)) / 10_000n;
       const calls: Hex[] = [
         encodeFunctionData({
@@ -333,12 +334,16 @@ export class UniswapV3ForkAdapter implements ILiquidityAdapter {
       if (bps === 10_000) {
         calls.push(encodeFunctionData({ abi: nonfungiblePositionManagerAbi, functionName: 'burn', args: [tokenId] }));
       }
-      return [
-        {
-          to: this.positionManager,
-          data: encodeFunctionData({ abi: nonfungiblePositionManagerAbi, functionName: 'multicall', args: [calls] }),
-        },
-      ];
+      return calls;
     });
+
+    const chunkSize = this.protocol.capabilities.maxPositionsPerTx;
+    const chunks: Call[][] = [];
+    for (let i = 0; i < callsPerPosition.length; i += chunkSize) {
+      const flat = callsPerPosition.slice(i, i + chunkSize).flat();
+      const data = encodeFunctionData({ abi: nonfungiblePositionManagerAbi, functionName: 'multicall', args: [flat] });
+      chunks.push([{ to: this.positionManager, data }]);
+    }
+    return chunks;
   }
 }
