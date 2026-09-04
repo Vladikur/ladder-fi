@@ -48,26 +48,32 @@ export async function POST(request: Request) {
       const adapter = getAdapter(input.chainId, input.protocol);
 
       const chunks = await adapter.buildCollectCalls(signer.address, input.tokenIds.map(BigInt));
-      const out: { tokenId: string; hash: string; success: boolean }[] = [];
+      const out: { tokenId: string; hash: string; success: boolean; error?: string }[] = [];
       for (let i = 0; i < chunks.length; i++) {
         const tokenId = input.tokenIds[i]!;
-        const position = await adapter.getPositionSummary(BigInt(tokenId));
-        const hash = await signer.sendCalls(input.chainId, chunks[i]!);
-        const receipt = await signer.waitForReceipt(input.chainId, hash);
-        appendAudit({
-          timestamp: new Date().toISOString(),
-          chainId: input.chainId,
-          protocol: input.protocol,
-          nonce: Number(receipt.transactionIndex),
-          hash,
-          operation: 'collect',
-          token0: position.token0,
-          token1: position.token1,
-          amount0: '0',
-          amount1: '0',
-          result: receipt.status === 'success' ? 'success' : 'failure',
-        });
-        out.push({ tokenId, hash, success: receipt.status === 'success' });
+        // Caught per-position so one bad tokenId (already burned, never minted, etc.)
+        // doesn't hide whether the others in this batch went through.
+        try {
+          const position = await adapter.getPositionSummary(BigInt(tokenId));
+          const hash = await signer.sendCalls(input.chainId, chunks[i]!);
+          const receipt = await signer.waitForReceipt(input.chainId, hash);
+          appendAudit({
+            timestamp: new Date().toISOString(),
+            chainId: input.chainId,
+            protocol: input.protocol,
+            nonce: Number(receipt.transactionIndex),
+            hash,
+            operation: 'collect',
+            token0: position.token0,
+            token1: position.token1,
+            amount0: '0',
+            amount1: '0',
+            result: receipt.status === 'success' ? 'success' : 'failure',
+          });
+          out.push({ tokenId, hash, success: receipt.status === 'success' });
+        } catch (err) {
+          out.push({ tokenId, hash: '', success: false, error: err instanceof Error ? err.message : 'Unknown error' });
+        }
       }
       return out;
     });

@@ -84,12 +84,20 @@ export function PositionsPanel({ chainId, protocol, poolId }: { chainId: number;
     setSelected((prev) => (prev.size === rows.length ? new Set() : new Set(rows.map((r) => r.tokenId.toString()))));
   }
 
+  function describeFailures(results: { tokenId: string; success: boolean; error?: string }[]): string | null {
+    const failed = results.filter((r) => !r.success);
+    if (failed.length === 0) return null;
+    const detail = failed.map((f) => `#${f.tokenId}${f.error ? ` (${f.error})` : ''}`).join(', ');
+    return `${failed.length} of ${results.length} failed: ${detail}`;
+  }
+
   async function doCollect() {
     setBusy(true);
     setError(null);
     try {
-      await collectPositions(appToken, { chainId, protocol, tokenIds: [...selected] });
+      const { results } = await collectPositions(appToken, { chainId, protocol, tokenIds: [...selected] });
       await refresh();
+      setError(describeFailures(results));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Collect failed');
     } finally {
@@ -101,8 +109,9 @@ export function PositionsPanel({ chainId, protocol, poolId }: { chainId: number;
     setBusy(true);
     setError(null);
     try {
-      await withdrawPositions(appToken, { chainId, protocol, tokenIds: [...selected], bps });
+      const { results } = await withdrawPositions(appToken, { chainId, protocol, tokenIds: [...selected], bps });
       await refresh();
+      setError(describeFailures(results));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Withdraw failed');
     } finally {

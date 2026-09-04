@@ -115,7 +115,7 @@ export async function listPositions(
 export async function collectPositions(
   appToken: string,
   params: { chainId: number; protocol: string; tokenIds: string[] },
-): Promise<{ results: { tokenId: string; hash: string; success: boolean }[] }> {
+): Promise<{ results: { tokenId: string; hash: string; success: boolean; error?: string }[] }> {
   const res = await apiFetch(appToken, '/api/positions/collect', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -140,7 +140,7 @@ export async function getBalance(
 export async function withdrawPositions(
   appToken: string,
   params: { chainId: number; protocol: string; tokenIds: string[]; bps: number },
-): Promise<{ results: { tokenId: string; hash: string; success: boolean }[] }> {
+): Promise<{ results: { tokenId: string; hash: string; success: boolean; error?: string }[] }> {
   const res = await apiFetch(appToken, '/api/positions/withdraw', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

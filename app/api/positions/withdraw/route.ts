@@ -52,33 +52,42 @@ export async function POST(request: Request) {
 
       const chunkSize = getProtocol(input.chainId, input.protocol).capabilities.maxPositionsPerTx;
       const chunks = await adapter.buildWithdrawCalls(signer.address, input.tokenIds.map(BigInt), input.bps);
-      const out: { tokenId: string; hash: string; success: boolean }[] = [];
+      const out: { tokenId: string; hash: string; success: boolean; error?: string }[] = [];
       for (let i = 0; i < chunks.length; i++) {
         const tokenIdsInChunk = input.tokenIds.slice(i * chunkSize, (i + 1) * chunkSize);
-        // read before sending - a full withdraw (bps=10000) burns the NFT, after which positions()/getPoolAndPositionInfo() revert
-        const positions = await Promise.all(tokenIdsInChunk.map((tokenId) => adapter.getPositionSummary(BigInt(tokenId))));
-        const hash = await signer.sendCalls(input.chainId, chunks[i]!);
-        const receipt = await signer.waitForReceipt(input.chainId, hash);
-        const success = receipt.status === 'success';
-        for (let j = 0; j < tokenIdsInChunk.length; j++) {
-          const tokenId = tokenIdsInChunk[j]!;
-          const position = positions[j]!;
-          appendAudit({
-            timestamp: new Date().toISOString(),
-            chainId: input.chainId,
-            protocol: input.protocol,
-            nonce: Number(receipt.transactionIndex),
-            hash,
-            operation: 'withdraw',
-            token0: position.token0,
-            token1: position.token1,
-            tickLower: position.tickLower,
-            tickUpper: position.tickUpper,
-            amount0: '0',
-            amount1: '0',
-            result: success ? 'success' : 'failure',
-          });
-          out.push({ tokenId, hash, success });
+        // Caught per-chunk so one bad tokenId in a batch (already burned, never minted,
+        // etc.) doesn't hide whether other chunks in this request went through.
+        try {
+          // read before sending - a full withdraw (bps=10000) burns the NFT, after which positions()/getPoolAndPositionInfo() revert
+          const positions = await Promise.all(tokenIdsInChunk.map((tokenId) => adapter.getPositionSummary(BigInt(tokenId))));
+          const hash = await signer.sendCalls(input.chainId, chunks[i]!);
+          const receipt = await signer.waitForReceipt(input.chainId, hash);
+          const success = receipt.status === 'success';
+          for (let j = 0; j < tokenIdsInChunk.length; j++) {
+            const tokenId = tokenIdsInChunk[j]!;
+            const position = positions[j]!;
+            appendAudit({
+              timestamp: new Date().toISOString(),
+              chainId: input.chainId,
+              protocol: input.protocol,
+              nonce: Number(receipt.transactionIndex),
+              hash,
+              operation: 'withdraw',
+              token0: position.token0,
+              token1: position.token1,
+              tickLower: position.tickLower,
+              tickUpper: position.tickUpper,
+              amount0: '0',
+              amount1: '0',
+              result: success ? 'success' : 'failure',
+            });
+            out.push({ tokenId, hash, success });
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error';
+          for (const tokenId of tokenIdsInChunk) {
+            out.push({ tokenId, hash: '', success: false, error: message });
+          }
         }
       }
       return out;
