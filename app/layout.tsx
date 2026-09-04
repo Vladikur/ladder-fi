@@ -5,7 +5,7 @@ import { AppTokenProvider } from '@/components/AppTokenProvider';
 import { QueryProvider } from '@/components/QueryProvider';
 
 export const metadata: Metadata = {
-  title: 'Liquidity Ladder',
+  title: 'LadderFi',
   description: 'Bid-Ask concentrated liquidity ladders for Robinhood Chain',
 };
 

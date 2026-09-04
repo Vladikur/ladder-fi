@@ -12,7 +12,7 @@ export function Header() {
   return (
     <header className="sticky top-0 z-10 border-b border-neutral-800 bg-neutral-950/95 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center gap-2 px-6 py-3">
-        <span className="mr-2 text-sm font-semibold">Liquidity Ladder</span>
+        <span className="mr-2 text-sm font-semibold">LadderFi</span>
         <Link href="/" className={linkClass('/')}>
           Main
         </Link>

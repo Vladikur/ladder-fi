@@ -5,7 +5,7 @@ import { z } from 'zod';
 // exists to keep the client/server env split explicit even though it's nearly empty -
 // nothing here may be renamed to drop the NEXT_PUBLIC_ prefix without becoming a leak.
 const clientEnvSchema = z.object({
-  NEXT_PUBLIC_APP_NAME: z.string().default('Liquidity Ladder'),
+  NEXT_PUBLIC_APP_NAME: z.string().default('LadderFi'),
 });
 
 export const clientEnv = clientEnvSchema.parse({

@@ -1,4 +1,4 @@
-# Liquidity Ladder — Robinhood Chain
+# LadderFi — Robinhood Chain
 
 Self-hosted, single-user tool that lays concentrated Uniswap v3/v4 liquidity out as a
 ladder of narrow one-sided positions using the Bid-Ask weighting strategy (Meteora

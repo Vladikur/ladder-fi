@@ -14,7 +14,7 @@ import type { PlanResult, RawPoolState } from '@/lib/core';
 import { resolveOrientation, toUserFacingPrice, tickToPrice } from '@/lib/core';
 import { CHAIN_ID, EXPLORER_URL } from '@/lib/constants';
 
-const PRESETS_KEY = 'liquidity-ladder:presets';
+const PRESETS_KEY = 'ladderfi:presets';
 
 function defaultConfig(pool: PoolListItem): LadderConfig {
   const baseToken = pool.state.token0.address;
@@ -174,7 +174,7 @@ function PageInner() {
       <Banner />
       <Header />
       <div className="mx-auto max-w-6xl space-y-6 p-6">
-        <h1 className="text-2xl font-semibold">Liquidity Ladder — Robinhood Chain</h1>
+        <h1 className="text-2xl font-semibold">LadderFi — Robinhood Chain</h1>
 
         <div className="flex gap-2">
           {(['uniswap-v3', 'uniswap-v4'] as const).map((p) => (
