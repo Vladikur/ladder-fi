@@ -1,7 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useMemo, useState } from 'react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
 import { Banner } from '@/components/Banner';
 import { Header } from '@/components/Header';
 import { PoolSearch } from '@/components/PoolSearch';
@@ -42,32 +41,10 @@ function defaultConfig(pool: PoolListItem): LadderConfig {
 // import {generatePrivateKey, privateKeyToAccount} from 'viem/accounts'; const pk = generatePrivateKey(); console.log('PRIVATE_KEY=' + pk); console.log('address:', privateKeyToAccount(pk).address);
 
 export default function Page() {
-  return (
-    <Suspense fallback={null}>
-      <PageInner />
-    </Suspense>
-  );
-}
-
-function PageInner() {
   const appToken = useAppToken();
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
 
-  const [protocol, setProtocol] = useState<'uniswap-v3' | 'uniswap-v4'>(() =>
-    searchParams.get('protocol') === 'uniswap-v3' ? 'uniswap-v3' : 'uniswap-v4',
-  );
-  const [searchToken, setSearchToken] = useState(() => searchParams.get('token') ?? '');
-
-  // Mirror protocol/token into the URL so a reload doesn't lose them -
-  // replace (not push) so typing in the search box doesn't spam browser history.
-  useEffect(() => {
-    const params = new URLSearchParams();
-    params.set('protocol', protocol);
-    if (searchToken) params.set('token', searchToken);
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-  }, [protocol, searchToken, pathname, router]);
+  const [protocol, setProtocol] = useState<'uniswap-v3' | 'uniswap-v4'>('uniswap-v4');
+  const [searchToken, setSearchToken] = useState('');
 
   const [pool, setPool] = useState<PoolListItem | null>(null);
   const [config, setConfig] = useState<LadderConfig | null>(null);
