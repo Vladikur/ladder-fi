@@ -1,5 +1,6 @@
 'use client';
 
+import { useAccount } from 'wagmi';
 import { useAppToken } from './AppTokenProvider';
 import { getBalance } from '@/lib/api-client';
 import type { PoolListItem } from '@/lib/api-client';
@@ -31,6 +32,7 @@ export function Configurator({
   onChange: (next: LadderConfig) => void;
 }) {
   const appToken = useAppToken();
+  const { address } = useAccount();
   const { token0, token1 } = pool.state;
   const baseIsToken0 = config.baseToken.toLowerCase() === token0.address.toLowerCase();
   const baseSymbol = baseIsToken0 ? token0.symbol : token1.symbol;
@@ -41,8 +43,9 @@ export function Configurator({
   }
 
   async function setMax(field: 'baseAmount' | 'quoteAmount') {
+    if (!address) return;
     const tokenAddr = field === 'baseAmount' ? (baseIsToken0 ? token0.address : token1.address) : baseIsToken0 ? token1.address : token0.address;
-    const { balance, decimals } = await getBalance(appToken, { chainId, token: tokenAddr });
+    const { balance, decimals } = await getBalance(appToken, { chainId, token: tokenAddr, owner: address });
     set(field, formatUnitsPlain(balance, decimals));
   }
 
@@ -133,7 +136,7 @@ export function Configurator({
           {baseSymbol} amount
           <div className="flex gap-1">
             <input value={config.baseAmount} onChange={(e) => set('baseAmount', e.target.value)} className="w-full rounded border border-neutral-700 bg-neutral-950 px-2 py-1 font-mono" />
-            <button type="button" onClick={() => setMax('baseAmount')} className="rounded bg-neutral-700 px-2 text-xs">
+            <button type="button" disabled={!address} onClick={() => setMax('baseAmount')} className="rounded bg-neutral-700 px-2 text-xs disabled:opacity-40">
               MAX
             </button>
           </div>
@@ -145,7 +148,7 @@ export function Configurator({
           {quoteSymbol} amount
           <div className="flex gap-1">
             <input value={config.quoteAmount} onChange={(e) => set('quoteAmount', e.target.value)} className="w-full rounded border border-neutral-700 bg-neutral-950 px-2 py-1 font-mono" />
-            <button type="button" onClick={() => setMax('quoteAmount')} className="rounded bg-neutral-700 px-2 text-xs">
+            <button type="button" disabled={!address} onClick={() => setMax('quoteAmount')} className="rounded bg-neutral-700 px-2 text-xs disabled:opacity-40">
               MAX
             </button>
           </div>

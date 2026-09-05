@@ -79,52 +79,43 @@ export async function getPlan(
   });
 }
 
-export type ExecuteEvent = { type: string; [key: string]: unknown };
+export interface SerializedCall {
+  to: `0x${string}`;
+  data: `0x${string}`;
+  /** bigint serialized as a decimal string by lib/json.ts - convert with BigInt(...) before sending. */
+  value?: string;
+}
 
-/** Streams SSE events from /api/execute, calling onEvent for each one, until the stream ends. */
-export async function executeStream(
+export interface PrepareExecuteResult {
+  ref: PoolRef;
+  warnings: string[];
+  positionManager: `0x${string}`;
+  mintableBinsCount: number;
+  approveCalls: SerializedCall[];
+  mintChunks: SerializedCall[][];
+}
+
+/** Builds unsigned approve/mint calldata server-side; the caller signs and sends each call via the connected wallet. */
+export async function prepareExecute(
   appToken: string,
-  params: PlanRequestParams & { resumeFromChunk?: number },
-  onEvent: (event: ExecuteEvent) => void,
-): Promise<void> {
+  params: PlanRequestParams & { owner: string },
+): Promise<PrepareExecuteResult> {
   const res = await apiFetch(appToken, '/api/execute', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(params),
   });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error ?? `Execute request failed with status ${res.status}`);
-  }
-  if (!res.body) throw new Error('No response body for SSE stream');
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const parts = buffer.split('\n\n');
-    buffer = parts.pop() ?? '';
-    for (const part of parts) {
-      const line = part.split('\n').find((l) => l.startsWith('data: '));
-      if (!line) continue;
-      try {
-        onEvent(JSON.parse(line.slice('data: '.length)));
-      } catch {
-        // ignore malformed SSE frame
-      }
-    }
-  }
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error ?? `Failed to prepare execution (status ${res.status})`);
+  return data;
 }
 
 export async function listPositions(
   appToken: string,
-  params: { chainId: number; protocol: string; poolId?: string },
-): Promise<{ positions: (PositionView & { rangeStatus: string; worked: boolean | null; label: string | null })[]; aggregate: Record<string, unknown> }> {
+  params: { chainId: number; protocol: string; owner: string; poolId?: string },
+): Promise<{ positions: (PositionView & { rangeStatus: string })[]; aggregate: Record<string, unknown> }> {
   return withRpcHiccupRetry(async () => {
-    const qs = new URLSearchParams({ chainId: String(params.chainId), protocol: params.protocol });
+    const qs = new URLSearchParams({ chainId: String(params.chainId), protocol: params.protocol, owner: params.owner });
     if (params.poolId) qs.set('poolId', params.poolId);
     const res = await apiFetch(appToken, `/api/positions?${qs.toString()}`);
     const data = await res.json();
@@ -133,26 +124,27 @@ export async function listPositions(
   });
 }
 
-export async function collectPositions(
+/** Builds unsigned collect calldata, one chunk per tokenId (same order as `tokenIds`). */
+export async function prepareCollect(
   appToken: string,
-  params: { chainId: number; protocol: string; tokenIds: string[] },
-): Promise<{ results: { tokenId: string; hash: string; success: boolean; error?: string }[] }> {
+  params: { chainId: number; protocol: string; owner: string; tokenIds: string[] },
+): Promise<{ chunks: SerializedCall[][] }> {
   const res = await apiFetch(appToken, '/api/positions/collect', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(params),
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? 'Failed to collect fees');
+  if (!res.ok) throw new Error(data.error ?? 'Failed to prepare collect');
   return data;
 }
 
 export async function getBalance(
   appToken: string,
-  params: { chainId: number; token: string },
+  params: { chainId: number; token: string; owner: string },
 ): Promise<{ owner: string; token: string; balance: string; decimals: number }> {
   return withRpcHiccupRetry(async () => {
-    const qs = new URLSearchParams({ chainId: String(params.chainId), token: params.token });
+    const qs = new URLSearchParams({ chainId: String(params.chainId), token: params.token, owner: params.owner });
     const res = await apiFetch(appToken, `/api/balance?${qs.toString()}`);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error ?? 'Failed to load balance');
@@ -160,16 +152,17 @@ export async function getBalance(
   });
 }
 
-export async function withdrawPositions(
+/** Builds unsigned withdraw calldata; `chunkSize` tells the caller how to slice its own `tokenIds` to match `chunks`. */
+export async function prepareWithdraw(
   appToken: string,
-  params: { chainId: number; protocol: string; tokenIds: string[]; bps: number },
-): Promise<{ results: { tokenId: string; hash: string; success: boolean; error?: string }[] }> {
+  params: { chainId: number; protocol: string; owner: string; tokenIds: string[]; bps: number },
+): Promise<{ chunks: SerializedCall[][]; chunkSize: number }> {
   const res = await apiFetch(appToken, '/api/positions/withdraw', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(params),
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? 'Failed to withdraw');
+  if (!res.ok) throw new Error(data.error ?? 'Failed to prepare withdraw');
   return data;
 }

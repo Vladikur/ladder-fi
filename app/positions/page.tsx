@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { Banner } from '@/components/Banner';
 import { Header } from '@/components/Header';
 import { PositionsPanel } from '@/components/PositionsPanel';
 import { CHAIN_ID } from '@/lib/constants';
@@ -11,7 +10,6 @@ export default function AllPositionsPage() {
 
   return (
     <main className="min-h-screen">
-      <Banner />
       <Header />
       <div className="mx-auto max-w-6xl space-y-6 p-6">
         <h1 className="text-2xl font-semibold">All positions — every token</h1>

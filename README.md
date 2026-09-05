@@ -1,27 +1,31 @@
 # LadderFi — Robinhood Chain
 
-Self-hosted, single-user tool that lays concentrated Uniswap v3/v4 liquidity out as a
-ladder of narrow one-sided positions using the Bid-Ask weighting strategy (Meteora
+Non-custodial, publicly-hostable tool that lays concentrated Uniswap v3/v4 liquidity out
+as a ladder of narrow one-sided positions using the Bid-Ask weighting strategy (Meteora
 DLMM-style). See [`TZ-bid-ask-lp-robinhood-chain.md`](./TZ-bid-ask-lp-robinhood-chain.md)
 for the full spec this was built against (v2 support, which the TZ originally called
-for, has since been dropped in favor of v4 - see "Deviations" below).
+for, has since been dropped in favor of v4; the server-held signer the TZ specified has
+since been replaced by browser-wallet signing - see "Deviations" below).
 
-**This holds a live private key with no manual confirmation step.** Read the whole of
-"Safety" below before pointing it at real funds.
+**Non-custodial: the server never holds a private key.** Every approval, mint, collect,
+and withdraw is built as unsigned calldata server-side and signed by whichever wallet
+you connect in your browser (MetaMask, Rabby, or any other injected EIP-1193 wallet).
+Read the whole of "Safety" below before pointing it at real funds.
 
 ## Setup
 
 ```bash
 npm install
-cp .env.local.example .env.local   # fill in PRIVATE_KEY, APP_TOKEN
+cp .env.local.example .env.local   # fill in APP_TOKEN
 chmod 600 .env.local
 npm run dev     # http://127.0.0.1:3000
 ```
 
-`npm run dev` / `npm run start` both bind to `127.0.0.1` explicitly (`-H 127.0.0.1`);
-`middleware.ts` additionally rejects any request whose `Host` header isn't localhost
-unless `ALLOW_PUBLIC_BIND=true` is set. Use a wallet dedicated to this tool, funded only
-with the working capital and gas you're prepared to lose.
+Open the app, click "Connect wallet" in the header, and approve the connection in your
+wallet extension. `npm run dev` / `npm run start` both bind to `127.0.0.1` explicitly
+(`-H 127.0.0.1`); `middleware.ts` additionally rejects any request whose `Host` header
+isn't localhost unless `ALLOW_PUBLIC_BIND=true` is set (needed to host this for other
+people - put TLS in front of it if you do).
 
 ## Verified on-chain addresses
 
@@ -78,12 +82,15 @@ mint mechanism. `lib/registry` holds the one-entry-per-chain and one-entry-per-p
 descriptors, `lib/adapters` implements `ILiquidityAdapter` per protocol family
 (`UniswapV3ForkAdapter` is parameterized — a PancakeSwap-style v3 fork is a new registry
 entry, not new code; `UniswapV4Adapter` similarly isn't parameterized per-chain since v4
-has no per-chain factory/init-code-hash to vary). `lib/signer` and `lib/guards` are
-server-only (nonce management, single-concurrency execution queue, KILL_SWITCH/limit
-checks, append-only audit log), and `/app/api/*` is the only place that wires them
-together. The client never sees an RPC URL, a contract address, or the private key —
-it only calls this app's own API, which recomputes the plan from scratch server-side on
-every `/api/execute` call rather than accepting client-supplied calldata. A pool is
+has no per-chain factory/init-code-hash to vary). `/app/api/*` recomputes the plan from
+scratch server-side on every `/api/execute` call and returns unsigned calldata (approve
+calls + chunked mint calls) rather than accepting or sending client-supplied calldata
+itself; `lib/wallet` (client-side) is where the connected browser wallet signs and sends
+each call and waits for its receipt via wagmi. `lib/guards/csrf.ts` (still server-only)
+is the one guard that remains - it defends against other sites driving this app's API
+and popping wallet-signature prompts, which is unrelated to who holds the signing key.
+The server never sees an RPC URL beyond its own chain registry, never sees a private
+key, and never signs anything. A pool is
 addressed by `PoolRef.id` throughout - a real contract address for v3, or v4's 32-byte
 PoolId (there's no per-pool contract to have an address) - re-derived server-side from
 on-chain state either way, never trusted from the client (`resolvePoolRef`).
@@ -100,20 +107,28 @@ on-chain state either way, never trusted from the client (`resolvePoolRef`).
   chain, see "Verified addresses"), approved exact-amount and time-boxed to the same
   ~5-minute deadline as the mint itself, never `MaxUint256` / indefinite.
 - **Idempotent resend of a partially-failed mint batch** is done via an explicit
-  `resumeFromChunk` parameter (the client already saw which chunks confirmed via the
-  SSE stream) rather than a full on-chain reconciliation scan. This is simpler than what
-  §3.4.8 literally describes and works correctly for the intended flow (retrying from
-  the same browser session) but won't detect a completed chunk if you resend from a
-  different session without passing `resumeFromChunk`.
-- **`MAX_NOTIONAL_PER_RUN`/`_DAY`** are denominated in raw USDG units specifically (see
-  `chains.ts`'s `notionalToken`), not a true USD notional across arbitrary tokens —
-  there's no price oracle in scope (§7 excludes APR/backtest, and a general-purpose
-  oracle wasn't asked for). A deposit that doesn't touch USDG on either leg is exempt
-  from these two checks; every other guard still applies.
-- **"Доля отработавших бинов" (§3.5)** is only computable for positions this app itself
-  minted (their ask/bid intent is recorded in `audit.jsonl` at mint time, since it can't
-  be recovered from current on-chain state alone — see the comment in
-  `app/api/positions/route.ts`). Positions from elsewhere show as "worked: unknown".
+  `resumeFromChunk` index the browser keeps in its own React state (it already saw which
+  chunks confirmed while driving the wallet through them one at a time) rather than a
+  full on-chain reconciliation scan. This is simpler than what §3.4.8 literally describes
+  and works correctly for the intended flow (retrying from the same browser session) but
+  won't detect a completed chunk if you resend from a different session/tab.
+- **Non-custodial signing (superseding the TZ's server-held-key design, at the user's
+  explicit request, to allow hosting this for other people rather than one operator).**
+  `/api/execute`, `/api/positions/collect`, and `/api/positions/withdraw` now return
+  unsigned calldata instead of signing and sending it; the connected browser wallet
+  (wagmi + an injected EIP-1193 provider - MetaMask, Rabby, etc.) does that. As a direct
+  consequence, everything that existed only to protect a server-held key from bugs was
+  removed rather than ported: `KILL_SWITCH`, `MAX_SLIPPAGE_BPS`, `MAX_POSITIONS_PER_RUN`,
+  `MAX_NOTIONAL_PER_RUN`/`_DAY`, `MAX_GAS_PER_RUN`, the nonce manager, the stuck-tx
+  fee-bump/replacement loop, the single-concurrency execution queue, and the append-only
+  `audit.jsonl` are all gone (`TOKEN_ALLOWLIST` had already been removed earlier, see
+  below). Each user now confirms every transaction themselves in their own wallet, at
+  whatever gas price and nonce their wallet chooses.
+- **"Доля отработавших бинов" (§3.5)** was powered by `audit.jsonl` recording each mint's
+  ask/bid intent server-side; since the server no longer signs or sees confirmed mints,
+  and per-user auditing across a public multi-tenant app is a different feature that
+  wasn't asked for, this metric (and the `label`/`worked` fields on `/api/positions`) was
+  dropped along with the audit log rather than ported to a new per-wallet log.
 - **shadcn/ui**: not installed via its CLI (which needs an interactive prompt run);
   components are hand-written with the same Tailwind utility classes instead.
 - **Uniswap v2 was dropped in favor of v4** (superseding the TZ, at the user's explicit
@@ -121,7 +136,7 @@ on-chain state either way, never trusted from the client (`resolvePoolRef`).
 - **Uniswap v4** only supports pools with no hooks and no native-currency leg
   (`resolvePoolRef`/`findPools` reject anything else) — a hook can arbitrarily override
   liquidity-add behavior in ways this app has no way to reason about safely, and native
-  ETH handling (wrap/unwrap, `msg.value`) was never wired into the signer/execute path.
+  ETH handling (wrap/unwrap, `msg.value`) was never wired into the execute path.
 - **v4 pool discovery (`findPools`/the token-search box) is bounded to a recent block
   window** (`FIND_POOLS_WINDOW_BLOCKS` in `lib/adapters/uniswap-v4.ts`, ~2,000,000 blocks
   currently), not the full chain history. This chain's `PoolManager.Initialize` event
@@ -138,17 +153,20 @@ on-chain state either way, never trusted from the client (`resolvePoolRef`).
   `Transfer` events chronologically and then confirming each candidate live via
   `ownerOf()`, rather than iterating `tokenOfOwnerByIndex` like v3.
 - **`TOKEN_ALLOWLIST` (§5's default-deny token guard) was removed at the user's explicit
-  request.** `runPreflightGuards` (`lib/guards/limits.ts`) no longer rejects unlisted
-  tokens; `/api/execute` will sign and send against any token pair a plan can be built
-  for. `KILL_SWITCH` and the other §5 limits (slippage/positions/notional/gas) are
-  unaffected.
+  request**, before the rest of §5's guard-rails were later removed too (see the
+  non-custodial-signing bullet above). `/api/execute` will build calldata against any
+  token pair a plan can be built for; the connected wallet is the only remaining check
+  (a user simply won't sign a transaction they don't trust).
 
 ## Safety
 
-- `KILL_SWITCH=true` stops all execution immediately, checked before anything else.
-- The signer never logs the key or a raw signed transaction — only hash/nonce/gas.
-- `audit.jsonl` is append-only; back it up if you care about the DCA "worked fraction"
-  metric surviving a disk loss.
+- The server never sees a private key and never signs or sends a transaction - your
+  wallet does both, and you get its own confirmation prompt (and, for injected wallets,
+  its own gas/nonce handling and stuck-transaction replacement) for every approval, mint,
+  collect, and withdraw.
+- `assertRequestAuthorized` (`lib/guards/csrf.ts`) still checks `APP_TOKEN` and
+  Origin/Sec-Fetch-Site on every request - it stops other sites from silently driving
+  this app's API and popping wallet-signature prompts in your browser.
 - This is genuinely experimental software. Test against small amounts (or the testnet
   at chain id `46630`, `rpc.testnet.chain.robinhood.com` — not wired into the registry
   here, add it the same way as any other chain if you want it) before trusting it with

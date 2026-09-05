@@ -1,19 +1,32 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Banner } from '@/components/Banner';
+import { useAccount } from 'wagmi';
+import { call as simulateCall, sendTransaction, waitForTransactionReceipt } from 'wagmi/actions';
 import { Header } from '@/components/Header';
 import { PoolSearch } from '@/components/PoolSearch';
 import { Configurator, type LadderConfig } from '@/components/Configurator';
 import { PreviewChart } from '@/components/PreviewChart';
 import { PositionsPanel } from '@/components/PositionsPanel';
 import { useAppToken } from '@/components/AppTokenProvider';
-import { getPlan, executeStream, type PoolListItem, type ExecuteEvent } from '@/lib/api-client';
+import { getPlan, prepareExecute, type PoolListItem, type SerializedCall } from '@/lib/api-client';
+import { extractMintedTokenIds } from '@/lib/adapters/mint-events';
 import type { PlanResult, RawPoolState } from '@/lib/core';
 import { resolveOrientation, toUserFacingPrice, tickToPrice } from '@/lib/core';
 import { CHAIN_ID, EXPLORER_URL } from '@/lib/constants';
+import { wagmiConfig } from '@/lib/wallet/config';
+
+type ExecuteEvent = { type: string; [key: string]: unknown };
 
 const PRESETS_KEY = 'ladderfi:presets';
+
+function computePriceMinPercent(priceMin: string, priceMax: string): string {
+  const priceMaxNum = Number(priceMax);
+  const priceMinNum = Number(priceMin);
+  return priceMax !== '' && priceMaxNum > 0 && priceMin !== '' && !isNaN(priceMinNum)
+    ? (((priceMaxNum - priceMinNum) / priceMaxNum) * 100).toFixed(2)
+    : '';
+}
 
 function defaultConfig(pool: PoolListItem): LadderConfig {
   const baseToken = pool.state.token0.address;
@@ -38,10 +51,9 @@ function defaultConfig(pool: PoolListItem): LadderConfig {
   };
 }
 
-// import {generatePrivateKey, privateKeyToAccount} from 'viem/accounts'; const pk = generatePrivateKey(); console.log('PRIVATE_KEY=' + pk); console.log('address:', privateKeyToAccount(pk).address);
-
 export default function Page() {
   const appToken = useAppToken();
+  const { address, isConnected } = useAccount();
 
   const [protocol, setProtocol] = useState<'uniswap-v3' | 'uniswap-v4'>('uniswap-v4');
   const [searchToken, setSearchToken] = useState('');
@@ -97,34 +109,104 @@ export default function Page() {
     return () => clearTimeout(handle);
   }, [pool, config, protocol, appToken]);
 
+  async function sendCall(
+    call: SerializedCall,
+    onSubmitted: (hash: `0x${string}`) => void,
+  ): Promise<{ hash: `0x${string}`; receipt: Awaited<ReturnType<typeof waitForTransactionReceipt>> }> {
+    const hash = await sendTransaction(wagmiConfig, {
+      to: call.to,
+      data: call.data,
+      value: call.value ? BigInt(call.value) : undefined,
+      chainId: CHAIN_ID,
+    });
+    onSubmitted(hash);
+    const receipt = await waitForTransactionReceipt(wagmiConfig, { hash, chainId: CHAIN_ID });
+    return { hash, receipt };
+  }
+
   async function runExecute(resumeFromChunk = 0) {
-    if (!pool || !config) return;
+    if (!pool || !config || !address) return;
     setExecuting(true);
-    setLog([]);
+    if (resumeFromChunk === 0) setLog([]);
+    const push = (event: ExecuteEvent) => setLog((prev) => [...prev, event]);
     try {
-      await executeStream(
-        appToken,
-        {
-          chainId: CHAIN_ID,
-          protocol,
-          poolId: pool.ref.id,
-          baseToken: config.baseToken,
-          strategy: config.strategy,
-          alpha: config.alpha,
-          depositMode: config.depositMode,
-          n: config.n,
-          priceMin: config.priceMin,
-          priceMax: config.priceMax,
-          gapSpacings: config.gapSpacings,
-          baseAmount: config.baseAmount || '0',
-          quoteAmount: config.quoteAmount || '0',
-          slippageBps: config.slippageBps,
-          resumeFromChunk,
-        },
-        (event) => setLog((prev) => [...prev, event]),
-      );
+      push({ type: 'step', step: 'prepare', status: 'running' });
+      const prepared = await prepareExecute(appToken, {
+        chainId: CHAIN_ID,
+        protocol,
+        poolId: pool.ref.id,
+        owner: address,
+        baseToken: config.baseToken,
+        strategy: config.strategy,
+        alpha: config.alpha,
+        depositMode: config.depositMode,
+        n: config.n,
+        priceMin: config.priceMin,
+        priceMax: config.priceMax,
+        gapSpacings: config.gapSpacings,
+        baseAmount: config.baseAmount || '0',
+        quoteAmount: config.quoteAmount || '0',
+        slippageBps: config.slippageBps,
+      });
+      push({ type: 'step', step: 'prepare', status: 'done', positions: prepared.mintableBinsCount, warnings: prepared.warnings });
+
+      if (resumeFromChunk === 0) {
+        for (const call of prepared.approveCalls) {
+          push({ type: 'approve-sending', token: call.to });
+          const { hash, receipt } = await sendCall(call, (hash) => push({ type: 'approve-submitted', token: call.to, hash }));
+          if (receipt.status !== 'success') throw new Error(`Approve transaction ${hash} reverted`);
+          push({ type: 'approve-confirmed', token: call.to, hash });
+        }
+      }
+
+      push({ type: 'step', step: 'mint', status: 'running', totalChunks: prepared.mintChunks.length });
+      const mintedTokenIds: string[] = [];
+      for (let i = resumeFromChunk; i < prepared.mintChunks.length; i++) {
+        const chunkCall = prepared.mintChunks[i]![0]!;
+        // Simulated here, not server-side: this chunk's mint only succeeds once the
+        // approvals sent just above are actually mined, which by this point they are.
+        push({ type: 'step', step: 'simulate', status: 'running', chunkIndex: i });
+        try {
+          await simulateCall(wagmiConfig, {
+            account: address,
+            to: chunkCall.to,
+            data: chunkCall.data,
+            value: chunkCall.value ? BigInt(chunkCall.value) : undefined,
+            chainId: CHAIN_ID,
+          });
+        } catch (err) {
+          push({
+            type: 'partial-failure',
+            confirmedChunks: i,
+            totalChunks: prepared.mintChunks.length,
+            mintedTokenIds,
+            message: `Chunk ${i} would revert on-chain (${err instanceof Error ? err.message : 'simulation failed'}). ${i} of ${prepared.mintChunks.length} chunks already succeeded. Retry with resumeFromChunk=${i} to send the remainder.`,
+          });
+          return;
+        }
+        push({ type: 'mint-chunk-sending', chunkIndex: i, totalChunks: prepared.mintChunks.length });
+        const { hash, receipt } = await sendCall(chunkCall, (hash) =>
+          push({ type: 'mint-chunk-submitted', chunkIndex: i, totalChunks: prepared.mintChunks.length, hash }),
+        );
+        const tokenIds = receipt.status === 'success' ? extractMintedTokenIds(receipt.logs, prepared.positionManager) : [];
+        mintedTokenIds.push(...tokenIds);
+
+        if (receipt.status !== 'success') {
+          push({ type: 'mint-chunk-failed', chunkIndex: i, totalChunks: prepared.mintChunks.length, hash });
+          push({
+            type: 'partial-failure',
+            confirmedChunks: i,
+            totalChunks: prepared.mintChunks.length,
+            mintedTokenIds,
+            message: `Chunk ${i} reverted on-chain. ${i} of ${prepared.mintChunks.length} chunks already succeeded. Retry with resumeFromChunk=${i} to send the remainder.`,
+          });
+          return;
+        }
+        push({ type: 'mint-chunk-confirmed', chunkIndex: i, totalChunks: prepared.mintChunks.length, hash, tokenIds });
+      }
+      push({ type: 'done', mintedTokenIds, totalChunks: prepared.mintChunks.length });
     } catch (err) {
-      setLog((prev) => [...prev, { type: 'error', code: 'client', message: err instanceof Error ? err.message : 'Execution failed' }]);
+      push({ type: 'error', code: 'client', message: err instanceof Error ? err.message : 'Execution failed' });
     } finally {
       setExecuting(false);
     }
@@ -134,21 +216,31 @@ export default function Page() {
 
   function savePreset() {
     if (!config || !presetName.trim()) return;
+    const { priceMin, priceMax, ...rest } = config;
+    const priceMinPercent = computePriceMinPercent(priceMin, priceMax);
     const presets = JSON.parse(localStorage.getItem(PRESETS_KEY) ?? '{}');
-    presets[presetName.trim()] = config;
+    presets[presetName.trim()] = { ...rest, priceMinPercent };
     localStorage.setItem(PRESETS_KEY, JSON.stringify(presets));
   }
 
   function loadPreset(name: string) {
     const presets = JSON.parse(localStorage.getItem(PRESETS_KEY) ?? '{}');
-    if (presets[name]) setConfig(presets[name]);
+    const preset = presets[name];
+    if (preset && config) {
+      const { priceMin, priceMax, priceMinPercent, ...rest } = preset;
+      const priceMaxNum = Number(config.priceMax);
+      const pct = Number(priceMinPercent);
+      const newPriceMin = priceMinPercent !== undefined && priceMinPercent !== '' && !isNaN(pct) && priceMaxNum > 0
+        ? String(priceMaxNum * (1 - pct / 100))
+        : config.priceMin;
+      setConfig({ ...config, ...rest, priceMin: newPriceMin });
+    }
   }
 
   const presetNames: string[] = typeof window !== 'undefined' ? Object.keys(JSON.parse(localStorage.getItem(PRESETS_KEY) ?? '{}')) : [];
 
   return (
     <main className="min-h-screen">
-      <Banner />
       <Header />
       <div className="mx-auto max-w-6xl space-y-6 p-6">
         <h1 className="text-2xl font-semibold">LadderFi — Robinhood Chain</h1>
@@ -181,22 +273,24 @@ export default function Page() {
 
         {pool && config && (
           <>
-            <div className="flex items-end gap-2 text-sm">
-              <input
-                value={presetName}
-                onChange={(e) => setPresetName(e.target.value)}
-                placeholder="preset name"
-                className="rounded border border-neutral-700 bg-neutral-950 px-2 py-1"
-              />
-              <button onClick={savePreset} className="rounded bg-neutral-700 px-2 py-1">
-                Save preset
-              </button>
-              {presetNames.map((name) => (
-                <button key={name} onClick={() => loadPreset(name)} className="rounded bg-neutral-800 px-2 py-1">
-                  {name}
+            {false && (
+              <div className="flex items-end gap-2 text-sm">
+                <input
+                  value={presetName}
+                  onChange={(e) => setPresetName(e.target.value)}
+                  placeholder="preset name"
+                  className="rounded border border-neutral-700 bg-neutral-950 px-2 py-1"
+                />
+                <button onClick={savePreset} className="rounded bg-neutral-700 px-2 py-1">
+                  Save preset
                 </button>
-              ))}
-            </div>
+                {presetNames.map((name) => (
+                  <button key={name} onClick={() => loadPreset(name)} className="rounded bg-neutral-800 px-2 py-1">
+                    {name}
+                  </button>
+                ))}
+              </div>
+            )}
 
             <Configurator chainId={CHAIN_ID} pool={pool} config={config} onChange={setConfig} />
 
@@ -204,9 +298,11 @@ export default function Page() {
             {planError && <p className="text-sm text-red-400">{planError}</p>}
             {plan && <PreviewChart pool={plan.pool} plan={plan.plan} />}
 
+            {!isConnected && <p className="text-sm text-amber-400">Connect a wallet to execute.</p>}
+
             <div className="flex items-center gap-3">
               <button
-                disabled={!plan || executing}
+                disabled={!plan || executing || !isConnected}
                 onClick={() => runExecute(0)}
                 className="rounded bg-green-700 px-4 py-2 text-sm font-medium disabled:opacity-40"
               >
@@ -227,6 +323,14 @@ export default function Page() {
                 {log.map((e, i) => (
                   <div key={i} className={e.type === 'error' || e.type === 'partial-failure' ? 'text-red-400' : 'text-neutral-300'}>
                     {JSON.stringify(e)}
+                    {typeof e.hash === 'string' && (
+                      <>
+                        {' '}
+                        <a href={`${EXPLORER_URL}/tx/${e.hash}`} target="_blank" rel="noreferrer" className="underline">
+                          view on explorer
+                        </a>
+                      </>
+                    )}
                   </div>
                 ))}
               </div>

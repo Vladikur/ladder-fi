@@ -23,11 +23,11 @@ export interface ChainDescriptor {
   wrappedNative: Address;
   quoteCandidates: Address[];
   /**
-   * The stable, dollar-denominated token used as the unit for the MAX_NOTIONAL_PER_RUN
-   * / MAX_NOTIONAL_PER_DAY guards (there is no price oracle in this app - see TZ §7 -
-   * so notional exposure can only be measured directly in a stable token, not converted
-   * from arbitrary tokens). A deposit that doesn't touch this token on either leg is
-   * exempt from the two notional checks specifically; every other guard still applies.
+   * The stable, dollar-denominated token used as the unit for the app's best-effort $
+   * valuation display (lib/valuation.ts) - there is no price oracle in this app (see TZ
+   * §7), so a $ estimate can only be shown directly in a stable token, not converted
+   * from arbitrary tokens. A position/pair that doesn't touch this token on either leg
+   * falls back to showing raw liquidity units instead of a $ estimate.
    */
   notionalToken: Address;
 }

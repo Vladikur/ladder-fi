@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { ConnectWallet } from './ConnectWallet';
 
 export function Header() {
   const pathname = usePathname();
@@ -19,6 +20,9 @@ export function Header() {
         <Link href="/positions" className={linkClass('/positions')}>
           All positions
         </Link>
+        <div className="ml-auto">
+          <ConnectWallet />
+        </div>
       </div>
     </header>
   );

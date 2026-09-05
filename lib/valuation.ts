@@ -8,9 +8,9 @@ import type { Address, TokenMeta } from './core/types';
 
 /**
  * Best-effort $ estimate, valid only for pairs that include the chain's stable
- * notional token (no price oracle in this app - see README "Deviations"/TZ §7, same
- * reason MAX_NOTIONAL_PER_RUN is denominated in raw USDG). Returns null for pairs that
- * don't touch it - the caller should fall back to showing raw liquidity units.
+ * notional token (no price oracle in this app - see README "Deviations"/TZ §7). Returns
+ * null for pairs that don't touch it - the caller should fall back to showing raw
+ * liquidity units.
  */
 function notionalSide(token0: Address, token1: Address, notionalToken: Address): 0 | 1 | null {
   const n = notionalToken.toLowerCase();
