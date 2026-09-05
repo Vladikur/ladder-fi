@@ -6,6 +6,8 @@ import { getBalance } from '@/lib/api-client';
 import type { PoolListItem } from '@/lib/api-client';
 import type { Strategy, DepositMode } from '@/lib/core';
 
+const FEE_LABELS: Record<number, string> = { 100: '0.01%', 500: '0.05%', 3000: '0.3%', 10000: '1%' };
+
 export interface LadderConfig {
   baseToken: string;
   strategy: Strategy;
@@ -63,7 +65,14 @@ export function Configurator({
   }
 
   return (
-    <div className="grid grid-cols-2 gap-4 rounded-lg border border-neutral-800 bg-neutral-900 p-4 md:grid-cols-3">
+    <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+      <div className="mb-4 flex items-center gap-2 text-sm text-neutral-400">
+        <span className="font-medium text-neutral-100">
+          {token0.symbol} / {token1.symbol}
+        </span>
+        <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs">{FEE_LABELS[pool.ref.fee] ?? `${pool.ref.fee / 10000}%`}</span>
+      </div>
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
       <label className="flex flex-col gap-1 text-sm">
         Base token
         <select value={config.baseToken} onChange={(e) => set('baseToken', e.target.value)} className="rounded border border-neutral-700 bg-neutral-950 px-2 py-1">
@@ -154,6 +163,7 @@ export function Configurator({
           </div>
         </label>
       )}
+      </div>
     </div>
   );
 }

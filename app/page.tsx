@@ -243,7 +243,24 @@ export default function Page() {
     <main className="min-h-screen">
       <Header />
       <div className="mx-auto max-w-6xl space-y-6 p-6">
-        <h1 className="text-2xl font-semibold">LadderFi — Robinhood Chain</h1>
+        <h1 className="flex items-center gap-2 text-2xl font-semibold">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 16 16" data-icon="IconRobinhood16pxS">
+            <rect width="16" height="16" fill="#cf0" rx="8"></rect>
+            <path
+              fill="#000"
+              d="M9.0731 5.6235c.0665.0001.0868.0403.04.0937-1.137 1.2574-2.9498 3.3574-4.6152 7.5977-.0134.0333-.0537.0537-.0937.0537h-.2207c-.0468-.0001-.0671-.029-.0537-.0811.2207-.8159.5222-1.719.997-3.0498V8.392c0-.3544.0536-.6016.2676-.8691l1.458-1.8057c.0515-.0642.114-.0937.1875-.0937z"
+            ></path>
+            <path
+              fill="#000"
+              d="M9.4735 6.1332c.0468-.0534.0936-.0266.0938.04V8.729c0 .0334-.0064.0802-.0264.1201l-.9297 1.5313c-.1136.1871-.2463.2823-.4814.3545l-2.087.6426c-.0601.02-.0927-.0248-.0673-.0743 1.0099-1.973 2.1002-3.6116 3.498-5.1699"
+            ></path>
+            <path
+              fill="#000"
+              d="M9.1327 3.5444c.6556-.254 2.0734-.2406 2.3877.0937.3543.3747.4005 1.2778.3203 1.8662-.0602.401-.127.488-.3477.7754l-1.3574 1.7725c-.0401.06-.0936.0403-.0937-.0264v-2.542c-.0001-.2072-.1209-.3271-.3282-.3271H7.46c-.0666-.0002-.0865-.0471-.04-.0938.3811-.4013.7828-.8093 1.3847-1.3242.0602-.0515.1917-.1415.3281-.1944"
+            ></path>
+          </svg>
+          Robinhood Chain
+        </h1>
 
         <div className="flex gap-2">
           {(['uniswap-v3', 'uniswap-v4'] as const).map((p) => (
@@ -257,7 +274,7 @@ export default function Page() {
               }}
               className={`rounded px-3 py-1.5 text-sm ${protocol === p ? 'bg-blue-600' : 'bg-neutral-800'}`}
             >
-              {p === 'uniswap-v3' ? 'Uniswap v3 (bins)' : 'Uniswap v4 (bins)'}
+              {p === 'uniswap-v3' ? 'Uniswap v3' : 'Uniswap v4'}
             </button>
           ))}
         </div>

@@ -21,7 +21,7 @@ export default function AllPositionsPage() {
               onClick={() => setProtocol(p)}
               className={`rounded px-3 py-1.5 text-sm ${protocol === p ? 'bg-blue-600' : 'bg-neutral-800'}`}
             >
-              {p === 'uniswap-v3' ? 'Uniswap v3 (bins)' : 'Uniswap v4 (bins)'}
+              {p === 'uniswap-v3' ? 'Uniswap v3' : 'Uniswap v4'}
             </button>
           ))}
         </div>
