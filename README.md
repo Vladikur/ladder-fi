@@ -86,14 +86,29 @@ has no per-chain factory/init-code-hash to vary). `/app/api/*` recomputes the pl
 scratch server-side on every `/api/execute` call and returns unsigned calldata (approve
 calls + chunked mint calls) rather than accepting or sending client-supplied calldata
 itself; `lib/wallet` (client-side) is where the connected browser wallet signs and sends
-each call and waits for its receipt via wagmi. `lib/guards/csrf.ts` (still server-only)
-is the one guard that remains - it defends against other sites driving this app's API
-and popping wallet-signature prompts, which is unrelated to who holds the signing key.
+each call and waits for its receipt via wagmi. `lib/guards/csrf.ts` and
+`lib/guards/rate-limit.ts` guard every remaining server route: CSRF (`APP_TOKEN` +
+Origin/Sec-Fetch-Site) stops other sites from silently driving this app's API, and a
+per-route, per-IP token bucket stops a direct scripted caller - Origin/Sec-Fetch-Site are
+only checked when present, so a plain `curl` skips CSRF's second check entirely - from
+overloading the one shared RPC client once this is actually hosted for multiple people.
 The server never sees an RPC URL beyond its own chain registry, never sees a private
-key, and never signs anything. A pool is
-addressed by `PoolRef.id` throughout - a real contract address for v3, or v4's 32-byte
-PoolId (there's no per-pool contract to have an address) - re-derived server-side from
-on-chain state either way, never trusted from the client (`resolvePoolRef`).
+key, and never signs anything.
+
+Reads that don't need trusted re-derivation - listing a connected wallet's positions,
+searching for or looking up a pool - run directly in the browser against the chain's RPC
+instead of through the server (`lib/adapters/position-view.ts`,
+`lib/adapters/pool-search.ts`), calling the exact same adapter methods (`listPositions`,
+`findPools`, `getPoolState`, `resolvePoolRef`) the server itself uses for
+`/api/plan`/`/api/execute` - there is no `/api/positions` or `/api/pools` route. This
+moved client-side because both used to poll/search through the one shared, rate-limited
+server RPC client (`lib/rpc/client.ts`) on every connected user's browser: fine for one
+local operator, a bottleneck once many people use one hosted instance. `/api/plan`,
+`/api/execute`, `/api/positions/collect`, and `/api/positions/withdraw` stay server-side
+because they build calldata that must be re-derived from trusted on-chain state, never
+accepted from the client - a pool is addressed by `PoolRef.id` throughout (a real
+contract address for v3, or v4's 32-byte PoolId - there's no per-pool contract to have an
+address), re-derived via `resolvePoolRef` either way.
 
 ## Deviations from the TZ (flagged per its own §8/§6 instruction to report, not silently work around)
 
@@ -127,8 +142,9 @@ on-chain state either way, never trusted from the client (`resolvePoolRef`).
 - **"Доля отработавших бинов" (§3.5)** was powered by `audit.jsonl` recording each mint's
   ask/bid intent server-side; since the server no longer signs or sees confirmed mints,
   and per-user auditing across a public multi-tenant app is a different feature that
-  wasn't asked for, this metric (and the `label`/`worked` fields on `/api/positions`) was
-  dropped along with the audit log rather than ported to a new per-wallet log.
+  wasn't asked for, this metric (and the `label`/`worked` fields the positions listing
+  used to carry) was dropped along with the audit log rather than ported to a new
+  per-wallet log.
 - **shadcn/ui**: not installed via its CLI (which needs an interactive prompt run);
   components are hand-written with the same Tailwind utility classes instead.
 - **Uniswap v2 was dropped in favor of v4** (superseding the TZ, at the user's explicit
@@ -167,6 +183,13 @@ on-chain state either way, never trusted from the client (`resolvePoolRef`).
 - `assertRequestAuthorized` (`lib/guards/csrf.ts`) still checks `APP_TOKEN` and
   Origin/Sec-Fetch-Site on every request - it stops other sites from silently driving
   this app's API and popping wallet-signature prompts in your browser.
+- `assertRateLimited` (`lib/guards/rate-limit.ts`) caps each remaining server route to a
+  per-IP token bucket - CSRF alone doesn't stop a direct scripted client (a `curl` simply
+  omits the Origin/Sec-Fetch-Site headers a real browser always sends), so this is the
+  backstop against both abuse and many legitimate users overloading the shared RPC once
+  `ALLOW_PUBLIC_BIND=true` is set. It's in-memory, one process - correct for the single
+  `next start` process this app runs as, but would need a shared store (e.g. Redis) if
+  you ever ran multiple instances behind a load balancer.
 - This is genuinely experimental software. Test against small amounts (or the testnet
   at chain id `46630`, `rpc.testnet.chain.robinhood.com` — not wired into the registry
   here, add it the same way as any other chain if you want it) before trusting it with
