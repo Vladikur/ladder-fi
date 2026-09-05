@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useAppToken } from './AppTokenProvider';
-import { searchPools, type PoolListItem } from '@/lib/api-client';
+import { searchPoolsByToken, lookupPoolById, type PoolListItem } from '@/lib/adapters/pool-search';
+import { addressSchema, poolIdSchema } from '@/lib/schemas';
 import { tickToPrice } from '@/lib/core';
 import { getChain } from '@/lib/registry/chains';
 import { estimatePoolLiquidityUsd, formatUsd } from '@/lib/valuation';
@@ -74,7 +74,6 @@ export function PoolSearch({
   onTokenChange: (value: string) => void;
   onSelect: (pool: PoolListItem) => void;
 }) {
-  const appToken = useAppToken();
   const notionalToken = getChain(chainId).notionalToken;
   const [manualPool, setManualPool] = useState('');
   const [results, setResults] = useState<PoolListItem[] | null>(null);
@@ -91,10 +90,16 @@ export function PoolSearch({
   async function runSearch(tokenOverride?: string) {
     if (loading) return;
     const value = (tokenOverride ?? token).trim();
+    const parsed = addressSchema.safeParse(value);
+    if (!parsed.success) {
+      setError(parsed.error.issues[0]?.message ?? 'Invalid token address');
+      setResults(null);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const pools = await searchPools(appToken, { chainId, protocol, token: value });
+      const pools = await searchPoolsByToken(chainId, protocol, parsed.data);
       setResults(pools);
       setTokenHistory(pushHistory(TOKEN_HISTORY_KEY, value));
     } catch (err) {
@@ -109,11 +114,17 @@ export function PoolSearch({
     e?.preventDefault();
     if (loading) return;
     const value = (poolOverride ?? manualPool).trim();
+    const parsed = poolIdSchema.safeParse(value);
+    if (!parsed.success) {
+      setError(parsed.error.issues[0]?.message ?? 'Invalid pool address or PoolId');
+      setResults(null);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const pools = await searchPools(appToken, { chainId, protocol, poolId: value });
-      setResults(pools);
+      const pool = await lookupPoolById(chainId, protocol, parsed.data);
+      setResults([pool]);
       setPoolHistory(pushHistory(POOL_HISTORY_KEY, value));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Lookup failed');

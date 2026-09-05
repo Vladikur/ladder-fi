@@ -3,7 +3,7 @@
 import { useAccount } from 'wagmi';
 import { useAppToken } from './AppTokenProvider';
 import { getBalance } from '@/lib/api-client';
-import type { PoolListItem } from '@/lib/api-client';
+import type { PoolListItem } from '@/lib/adapters/pool-search';
 import type { Strategy, DepositMode } from '@/lib/core';
 
 const FEE_LABELS: Record<number, string> = { 100: '0.01%', 500: '0.05%', 3000: '0.3%', 10000: '1%' };

@@ -1,4 +1,3 @@
-import 'server-only';
 import { zeroAddress } from 'viem';
 import { getPublicClient } from '@/lib/rpc/client';
 import { listProtocolsForChain } from '@/lib/registry/protocols';
@@ -6,6 +5,12 @@ import { univ3PoolAbi, v4PoolManagerInitializeEvent } from './abis';
 import type { PoolRef } from './types';
 
 /**
+ * No 'server-only' tag: pure public-RPC reads, no secret (same reasoning as
+ * lib/rpc/errors.ts). Also called client-side now (lib/adapters/pool-search.ts, for
+ * manual pool/PoolId lookup) - that doesn't weaken the trust rule below, since
+ * /api/plan and /api/execute still call this themselves server-side before building
+ * calldata, never accepting a client-supplied ref.
+ *
  * Re-derives a PoolRef (token0/token1/fee/tickSpacing) directly from on-chain source of
  * truth, given only a pool identifier (a contract address for v3, a 32-byte PoolId for
  * v4). Used by /api/plan and /api/execute so a client-supplied token0/token1/fee is

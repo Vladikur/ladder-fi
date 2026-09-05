@@ -15,12 +15,12 @@ export class RateLimitError extends Error {
  * the 400ms-debounced live-preview burst while a user drags a slider
  * (app/page.tsx's plan useEffect); `execute`/`collect`/`withdraw` are one-shot actions
  * so a small burst (retry after fixing a validation error) is enough; `balance` is two
- * cheap reads called often (MAX button); `pools` is click-triggered search.
+ * cheap reads called often (MAX button). Pool search moved client-side
+ * (lib/adapters/pool-search.ts) so it no longer has a tier here.
  */
 const TIERS = {
   execute: { capacity: 8, refillPerSec: 6 / 60 },
   plan: { capacity: 20, refillPerSec: 30 / 60 },
-  pools: { capacity: 15, refillPerSec: 20 / 60 },
   balance: { capacity: 30, refillPerSec: 60 / 60 },
   collect: { capacity: 10, refillPerSec: 10 / 60 },
   withdraw: { capacity: 10, refillPerSec: 10 / 60 },

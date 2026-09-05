@@ -26,26 +26,6 @@ async function withRpcHiccupRetry<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-export interface PoolListItem {
-  ref: PoolRef;
-  state: PoolState;
-}
-
-export async function searchPools(
-  appToken: string,
-  params: { chainId: number; protocol: string; token?: string; poolId?: string },
-): Promise<PoolListItem[]> {
-  return withRpcHiccupRetry(async () => {
-    const qs = new URLSearchParams({ chainId: String(params.chainId), protocol: params.protocol });
-    if (params.token) qs.set('token', params.token);
-    if (params.poolId) qs.set('poolId', params.poolId);
-    const res = await apiFetch(appToken, `/api/pools?${qs.toString()}`);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error ?? 'Failed to search pools');
-    return data.pools;
-  });
-}
-
 export interface PlanRequestParams {
   chainId: number;
   protocol: string;
