@@ -84,7 +84,7 @@ export type ExecuteEvent = { type: string; [key: string]: unknown };
 /** Streams SSE events from /api/execute, calling onEvent for each one, until the stream ends. */
 export async function executeStream(
   appToken: string,
-  params: PlanRequestParams & { resumeFromChunk?: number },
+  params: PlanRequestParams & { resumeFromChunk?: number; maxGasFeeUsd?: number },
   onEvent: (event: ExecuteEvent) => void,
 ): Promise<void> {
   const res = await apiFetch(appToken, '/api/execute', {

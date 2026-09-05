@@ -12,6 +12,7 @@ import { getPlan, executeStream, type PoolListItem, type ExecuteEvent } from '@/
 import type { PlanResult, RawPoolState } from '@/lib/core';
 import { resolveOrientation, toUserFacingPrice, tickToPrice } from '@/lib/core';
 import { CHAIN_ID, EXPLORER_URL } from '@/lib/constants';
+import { getMaxGasFeeUsd } from '@/lib/settings';
 
 const PRESETS_KEY = 'ladderfi:presets';
 
@@ -120,6 +121,7 @@ export default function Page() {
           quoteAmount: config.quoteAmount || '0',
           slippageBps: config.slippageBps,
           resumeFromChunk,
+          maxGasFeeUsd: getMaxGasFeeUsd(),
         },
         (event) => setLog((prev) => [...prev, event]),
       );

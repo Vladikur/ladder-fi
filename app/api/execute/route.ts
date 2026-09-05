@@ -13,6 +13,7 @@ import { poolIdSchema } from '@/lib/schemas';
 import { getSigner } from '@/lib/signer/local-key';
 import { executionQueue, ConcurrentExecutionError } from '@/lib/signer/queue';
 import { runPreflightGuards, checkGasLimit, GuardViolationError } from '@/lib/guards/limits';
+import { checkGasFeeUsd } from '@/lib/guards/gas-fee';
 import { appendAudit } from '@/lib/guards/audit';
 import { getChain } from '@/lib/registry/resolve';
 import { getProtocol } from '@/lib/registry/protocols';
@@ -37,6 +38,8 @@ const bodySchema = z.object({
   slippageBps: z.number().int().min(0).max(10_000).default(50),
   /** number of mint chunks already confirmed in a previous attempt at this exact plan - skips resending them. */
   resumeFromChunk: z.number().int().min(0).default(0),
+  /** user's own $-denominated gas budget per chunk (Header settings popup, localStorage) - default mirrors DEFAULT_MAX_GAS_FEE_USD in lib/settings.ts. */
+  maxGasFeeUsd: z.number().positive().default(1),
 });
 
 type SseEvent = { type: string; [key: string]: unknown };
@@ -219,6 +222,7 @@ async function runExecution(
       value: chunkCalls[0]!.value ?? 0n,
     });
     checkGasLimit(gasEstimate);
+    await checkGasFeeUsd(input.chainId, gasEstimate, input.maxGasFeeUsd);
 
     send({ type: 'mint-chunk-sending', chunkIndex: i, totalChunks: chunks.length });
     const hash = await signer.sendCalls(input.chainId, chunkCalls);

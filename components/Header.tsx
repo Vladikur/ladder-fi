@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { SettingsPopup } from './SettingsPopup';
 
 export function Header() {
   const pathname = usePathname();
@@ -19,6 +20,7 @@ export function Header() {
         <Link href="/positions" className={linkClass('/positions')}>
           All positions
         </Link>
+        <SettingsPopup />
       </div>
     </header>
   );
