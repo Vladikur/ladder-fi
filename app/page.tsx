@@ -353,7 +353,7 @@ export default function Page() {
               </div>
             )}
 
-            <PositionsPanel chainId={CHAIN_ID} protocol={protocol} poolId={pool.ref.id} />
+            <PositionsPanel chainId={CHAIN_ID} protocol={protocol} poolRef={pool.ref} />
           </>
         )}
       </div>

@@ -1,7 +1,7 @@
 // Client-side fetch helpers. No 'server-only' imports here - `import type` only for
 // shapes, so nothing server-side ends up in the browser bundle.
 import type { PlanResult, Strategy, DepositMode } from '@/lib/core';
-import type { PoolRef, PoolState, PositionView } from '@/lib/adapters/types';
+import type { PoolRef, PoolState } from '@/lib/adapters/types';
 import { RPC_HICCUP_MESSAGE } from '@/lib/rpc/hiccup';
 
 async function apiFetch(appToken: string, path: string, init?: RequestInit): Promise<Response> {
@@ -108,20 +108,6 @@ export async function prepareExecute(
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? `Failed to prepare execution (status ${res.status})`);
   return data;
-}
-
-export async function listPositions(
-  appToken: string,
-  params: { chainId: number; protocol: string; owner: string; poolId?: string },
-): Promise<{ positions: (PositionView & { rangeStatus: string })[]; aggregate: Record<string, unknown> }> {
-  return withRpcHiccupRetry(async () => {
-    const qs = new URLSearchParams({ chainId: String(params.chainId), protocol: params.protocol, owner: params.owner });
-    if (params.poolId) qs.set('poolId', params.poolId);
-    const res = await apiFetch(appToken, `/api/positions?${qs.toString()}`);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error ?? 'Failed to load positions');
-    return data;
-  });
 }
 
 /** Builds unsigned collect calldata, one chunk per tokenId (same order as `tokenIds`). */

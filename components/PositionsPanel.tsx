@@ -4,17 +4,36 @@ import { useEffect, useState } from 'react';
 import { useAccount } from 'wagmi';
 import { sendTransaction, waitForTransactionReceipt } from 'wagmi/actions';
 import { useAppToken } from './AppTokenProvider';
-import { listPositions, prepareCollect, prepareWithdraw, type SerializedCall } from '@/lib/api-client';
-import type { PositionView } from '@/lib/adapters/types';
+import { prepareCollect, prepareWithdraw, type SerializedCall } from '@/lib/api-client';
+import { getAdapter } from '@/lib/adapters';
+import type { PoolRef } from '@/lib/adapters/types';
+import { toPositionsResult, type RangedPosition } from '@/lib/adapters/position-view';
 import { getChain } from '@/lib/registry/chains';
 import { estimatePositionLiquidityUsd, estimateFeesUsd, formatUsd } from '@/lib/valuation';
 import { tickToPrice } from '@/lib/core';
 import { truncateDecimals } from '@/lib/format';
 import { wagmiConfig } from '@/lib/wallet/config';
 import { useIsMounted } from '@/lib/wallet/use-mounted';
+import { RPC_HICCUP_MESSAGE } from '@/lib/rpc/hiccup';
+import { describeError } from '@/lib/rpc/errors';
 
-type Row = PositionView & { rangeStatus: string };
+type Row = RangedPosition;
 type OpResult = { tokenId: string; hash: string; success: boolean; error?: string };
+
+/** Mirrors lib/api-client.ts's withRpcHiccupRetry: one silent retry for the chain's
+ *  known-flaky-RPC hiccup, since this read now hits the RPC directly instead of going
+ *  through a server route that used to apply this retry on its own reads. */
+async function withRpcHiccupRetry<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (describeError(err) === RPC_HICCUP_MESSAGE) {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      return fn();
+    }
+    throw err;
+  }
+}
 
 // chainId deliberately not passed to either action below: wagmiConfig only ever
 // registers one chain, and both actions' generics want that chain's literal id, which
@@ -31,7 +50,7 @@ async function sendCall(call: SerializedCall, onSubmitted: (hash: `0x${string}`)
   return { hash, success: receipt.status === 'success' };
 }
 
-export function PositionsPanel({ chainId, protocol, poolId }: { chainId: number; protocol: string; poolId?: string }) {
+export function PositionsPanel({ chainId, protocol, poolRef }: { chainId: number; protocol: string; poolRef?: PoolRef }) {
   const appToken = useAppToken();
   const mounted = useIsMounted();
   const { address, isConnected } = useAccount();
@@ -48,12 +67,13 @@ export function PositionsPanel({ chainId, protocol, poolId }: { chainId: number;
     if (!address) return;
     setLoading(true);
     try {
-      const data = await listPositions(appToken, { chainId, protocol, owner: address, poolId });
-      setRows(data.positions);
-      setAggregate(data.aggregate);
+      const rawPositions = await withRpcHiccupRetry(() => getAdapter(chainId, protocol).listPositions(address, poolRef));
+      const { positions, aggregate } = toPositionsResult(rawPositions);
+      setRows(positions);
+      setAggregate(aggregate);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load positions');
+      setError(describeError(err));
     } finally {
       setLoading(false);
     }
@@ -69,7 +89,7 @@ export function PositionsPanel({ chainId, protocol, poolId }: { chainId: number;
     const interval = setInterval(() => void refresh(), 10_000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chainId, protocol, poolId, address]);
+  }, [chainId, protocol, poolRef, address]);
 
   const firstRow = rows[0];
   const currentPrice = firstRow ? tickToPrice(firstRow.currentTick, firstRow.token0.decimals, firstRow.token1.decimals) : null;

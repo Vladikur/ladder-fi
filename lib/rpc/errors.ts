@@ -1,7 +1,10 @@
-import 'server-only';
 import { RPC_HICCUP_MESSAGE } from './hiccup';
 
 /**
+ * No 'server-only' tag: pure string matching, no secret, and client-side reads
+ * (e.g. PositionsPanel's direct adapter calls) want the same hiccup message the
+ * server API routes give.
+ *
  * The chain's RPC node occasionally truncates JSON-RPC batch responses under load,
  * which trips a viem bug (it indexes the batch response array by request order and
  * assumes one entry per request) and surfaces as this exact generic message. It's
