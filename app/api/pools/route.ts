@@ -2,6 +2,7 @@ import 'server-only';
 import { z } from 'zod';
 import { jsonResponse } from '@/lib/json';
 import { assertRequestAuthorized, CsrfError } from '@/lib/guards/csrf';
+import { assertRateLimited, RateLimitError } from '@/lib/guards/rate-limit';
 import { getChain } from '@/lib/registry/resolve';
 import { getAdapter } from '@/lib/adapters';
 import { resolvePoolRef } from '@/lib/adapters/resolve-pool';
@@ -18,8 +19,12 @@ const querySchema = z.object({
 export async function GET(request: Request) {
   try {
     assertRequestAuthorized(request);
+    assertRateLimited(request, 'pools');
   } catch (err) {
     if (err instanceof CsrfError) return jsonResponse({ error: err.message }, { status: 401 });
+    if (err instanceof RateLimitError) {
+      return jsonResponse({ error: err.message }, { status: 429, headers: { 'Retry-After': String(Math.ceil(err.retryAfterMs / 1000)) } });
+    }
     throw err;
   }
 

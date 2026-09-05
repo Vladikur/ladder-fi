@@ -2,6 +2,7 @@ import 'server-only';
 import { z } from 'zod';
 import { jsonResponse } from '@/lib/json';
 import { assertRequestAuthorized, CsrfError } from '@/lib/guards/csrf';
+import { assertRateLimited, RateLimitError } from '@/lib/guards/rate-limit';
 import { resolvePlan } from '@/lib/services/plan';
 import { RangeTooNarrowError } from '@/lib/core';
 import { getAdapter } from '@/lib/adapters';
@@ -40,8 +41,12 @@ const bodySchema = z.object({
 export async function POST(request: Request) {
   try {
     assertRequestAuthorized(request);
+    assertRateLimited(request, 'execute');
   } catch (err) {
     if (err instanceof CsrfError) return jsonResponse({ error: err.message }, { status: 401 });
+    if (err instanceof RateLimitError) {
+      return jsonResponse({ error: err.message }, { status: 429, headers: { 'Retry-After': String(Math.ceil(err.retryAfterMs / 1000)) } });
+    }
     throw err;
   }
 
