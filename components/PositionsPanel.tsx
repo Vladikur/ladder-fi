@@ -20,6 +20,8 @@ import { describeError } from '@/lib/rpc/errors';
 type Row = RangedPosition;
 type OpResult = { tokenId: string; hash: string; success: boolean; error?: string };
 
+const REFRESH_INTERVAL_MS = 30_000;
+
 /** Mirrors lib/api-client.ts's withRpcHiccupRetry: one silent retry for the chain's
  *  known-flaky-RPC hiccup, since this read now hits the RPC directly instead of going
  *  through a server route that used to apply this retry on its own reads. */
@@ -62,6 +64,7 @@ export function PositionsPanel({ chainId, protocol, poolRef }: { chainId: number
   const [progress, setProgress] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [secondsUntilRefresh, setSecondsUntilRefresh] = useState<number | null>(null);
 
   async function refresh() {
     if (!address) return;
@@ -76,6 +79,7 @@ export function PositionsPanel({ chainId, protocol, poolRef }: { chainId: number
       setError(describeError(err));
     } finally {
       setLoading(false);
+      setSecondsUntilRefresh(REFRESH_INTERVAL_MS / 1000);
     }
   }
 
@@ -83,11 +87,49 @@ export function PositionsPanel({ chainId, protocol, poolRef }: { chainId: number
     if (!address) {
       setRows([]);
       setAggregate(null);
+      setSecondsUntilRefresh(null);
       return;
     }
     void refresh();
-    const interval = setInterval(() => void refresh(), 10_000);
-    return () => clearInterval(interval);
+
+    // Only poll while the tab is visible, to avoid hammering the shared public RPC
+    // from backgrounded tabs; refresh immediately when the tab regains focus instead.
+    // The 1s tick just drives the "next update in Ns" countdown shown next to Refresh.
+    let pollInterval: ReturnType<typeof setInterval> | null = null;
+    let tickInterval: ReturnType<typeof setInterval> | null = null;
+    function startTimers() {
+      if (pollInterval) return;
+      pollInterval = setInterval(() => void refresh(), REFRESH_INTERVAL_MS);
+      tickInterval = setInterval(() => {
+        setSecondsUntilRefresh((s) => (s === null ? null : Math.max(0, s - 1)));
+      }, 1000);
+    }
+    function stopTimers() {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+      }
+      if (tickInterval) {
+        clearInterval(tickInterval);
+        tickInterval = null;
+      }
+    }
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        void refresh();
+        startTimers();
+      } else {
+        stopTimers();
+      }
+    }
+
+    if (document.visibilityState === 'visible') startTimers();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      stopTimers();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chainId, protocol, poolRef, address]);
 
@@ -207,6 +249,9 @@ export function PositionsPanel({ chainId, protocol, poolRef }: { chainId: number
               <span className="h-3 w-3 animate-spin rounded-full border-2 border-neutral-500 border-t-transparent" />
               Loading…
             </span>
+          )}
+          {!loading && secondsUntilRefresh !== null && (
+            <span className="text-xs text-neutral-500">Next update in {secondsUntilRefresh}s</span>
           )}
           <button onClick={() => void refresh()} className="rounded bg-neutral-700 px-2 py-1 text-xs">
             Refresh
