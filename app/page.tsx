@@ -16,6 +16,7 @@ import type { PlanResult, RawPoolState } from '@/lib/core';
 import { resolveOrientation, toUserFacingPrice, tickToPrice } from '@/lib/core';
 import { CHAIN_ID, EXPLORER_URL } from '@/lib/constants';
 import { wagmiConfig } from '@/lib/wallet/config';
+import { trackEvent } from '@/lib/analytics';
 
 type ExecuteEvent = { type: string; [key: string]: unknown };
 
@@ -127,6 +128,7 @@ export default function Page() {
 
   async function runExecute(resumeFromChunk = 0) {
     if (!pool || !config || !address) return;
+    if (resumeFromChunk === 0) trackEvent('execute_click');
     setExecuting(true);
     if (resumeFromChunk === 0) setLog([]);
     const push = (event: ExecuteEvent) => setLog((prev) => [...prev, event]);

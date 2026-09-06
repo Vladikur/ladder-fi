@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Script from 'next/script';
 import './globals.css';
 import { getServerEnv } from '@/lib/env';
 import { AppTokenProvider } from '@/components/AppTokenProvider';
@@ -23,6 +24,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body>
+        {process.env.NODE_ENV === 'production' && (
+          <Script
+            defer
+            src="/umami/script.js"
+            data-website-id="37c25f02-7000-4440-b96f-cedd7ce5fda2"
+            strategy="afterInteractive"
+          />
+        )}
         <QueryProvider>
           <AppTokenProvider token={appToken}>{children}</AppTokenProvider>
         </QueryProvider>

@@ -7,6 +7,7 @@ import { tickToPrice } from '@/lib/core';
 import { getChain } from '@/lib/registry/chains';
 import { estimatePoolLiquidityUsd, formatUsd } from '@/lib/valuation';
 import { truncateDecimals } from '@/lib/format';
+import { trackEvent } from '@/lib/analytics';
 
 const FEE_LABELS: Record<number, string> = { 100: '0.01%', 500: '0.05%', 3000: '0.3%', 10000: '1%' };
 
@@ -89,6 +90,7 @@ export function PoolSearch({
 
   async function runSearch(tokenOverride?: string) {
     if (loading) return;
+    trackEvent('search_pools_by_token');
     const value = (tokenOverride ?? token).trim();
     const parsed = addressSchema.safeParse(value);
     if (!parsed.success) {
@@ -113,6 +115,7 @@ export function PoolSearch({
   async function runManualLookup(e?: React.FormEvent, poolOverride?: string) {
     e?.preventDefault();
     if (loading) return;
+    trackEvent('search_pool_by_id');
     const value = (poolOverride ?? manualPool).trim();
     const parsed = poolIdSchema.safeParse(value);
     if (!parsed.success) {
