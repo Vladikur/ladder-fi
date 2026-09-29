@@ -9,6 +9,14 @@ export interface PoolListItem {
   state: PoolState;
 }
 
+/** A v3-fork pool's id is its own contract address (40 hex chars); v4's singleton
+ *  PoolManager identifies pools by a 32-byte PoolId (64 hex chars) instead - see
+ *  lib/schemas.ts poolIdSchema. Lets callers that only have a bare pool id (e.g. from a
+ *  URL param or an external indexer) guess which adapter family it belongs to. */
+export function inferProtocolFromPoolId(id: string): 'uniswap-v3' | 'uniswap-v4' {
+  return id.length === 42 ? 'uniswap-v3' : 'uniswap-v4';
+}
+
 /** Client-safe replacement for the old GET /api/pools?token= branch. */
 export async function searchPoolsByToken(chainId: number, protocolKey: string, token: Address): Promise<PoolListItem[]> {
   const chain = getChain(chainId);

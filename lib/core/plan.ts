@@ -56,6 +56,8 @@ export interface PlanResult {
   binWidth: number;
   warnings: PlanWarning[];
   totals: { amount0: bigint; amount1: bigint };
+  /** true if the user's chosen "base" token is token0 of the pool; needed to map amount0/amount1 back to base/quote */
+  baseIsToken0: boolean;
 }
 
 function computeGlobalTickRange(
@@ -122,13 +124,39 @@ export function buildPlan(input: PlanInput): PlanResult {
 
   const warnings = [...ladder.warnings];
 
+  const askSide = ladderSideFor('ask', baseIsToken0);
+  const upperLabel = askSide === 'upper' ? 'ask' : 'bid';
+  const lowerLabel = askSide === 'lower' ? 'ask' : 'bid';
+  const baseSymbol = baseIsToken0 ? pool.token0.symbol : pool.token1.symbol;
+  const quoteSymbol = baseIsToken0 ? pool.token1.symbol : pool.token0.symbol;
+
+  // An ask bin only ever holds the base token and a bid bin only the quote token, so a
+  // range sitting wholly on one side of the active price cannot be funded from the other
+  // - the resulting all-zero plan is correct but reads like a rounding failure.
+  const warnUnfunded = (label: 'ask' | 'bid', count: number) => {
+    const [needed, other] = label === 'ask' ? [baseSymbol, quoteSymbol] : [quoteSymbol, baseSymbol];
+    const [here, there] = label === 'ask' ? ['above', 'below'] : ['below', 'above'];
+    warnings.push({
+      code: 'side-unfunded',
+      message: `${count} ${label} bin(s) sit ${here} the current price and can only hold ${needed}, but the deposit contains no ${needed}. Deposit ${needed}, or move the price range ${there} the current price to fund it with ${other}.`,
+    });
+  };
+
   const dustBins: string[] = [];
-  sizedUpper.forEach((b, i) => {
-    if ((upperWeights[i] ?? 0) > 0 && b.amount0 === 0n) dustBins.push(`ask #${i}`);
-  });
-  sizedLower.forEach((b, i) => {
-    if ((lowerWeights[i] ?? 0) > 0 && b.amount1 === 0n) dustBins.push(`bid #${i}`);
-  });
+  if (sizedUpper.length > 0 && token0Amount === 0n) {
+    warnUnfunded(upperLabel, sizedUpper.length);
+  } else {
+    sizedUpper.forEach((b, i) => {
+      if ((upperWeights[i] ?? 0) > 0 && b.amount0 === 0n) dustBins.push(`${upperLabel} #${i}`);
+    });
+  }
+  if (sizedLower.length > 0 && token1Amount === 0n) {
+    warnUnfunded(lowerLabel, sizedLower.length);
+  } else {
+    sizedLower.forEach((b, i) => {
+      if ((lowerWeights[i] ?? 0) > 0 && b.amount1 === 0n) dustBins.push(`${lowerLabel} #${i}`);
+    });
+  }
   if (dustBins.length > 0) {
     warnings.push({
       code: 'dust-amount',
@@ -139,7 +167,7 @@ export function buildPlan(input: PlanInput): PlanResult {
   const toBin = (side: LadderSide) => (b: (typeof sizedUpper)[number]): PlanBin => ({
     index: b.bin.index,
     side,
-    label: ladderSideFor('ask', baseIsToken0) === side ? 'ask' : 'bid',
+    label: askSide === side ? 'ask' : 'bid',
     tickLower: b.bin.tickLower,
     tickUpper: b.bin.tickUpper,
     priceLower: toUserFacingPrice(tickToPrice(b.bin.tickLower, dec0, dec1), baseIsToken0),
@@ -175,5 +203,6 @@ export function buildPlan(input: PlanInput): PlanResult {
     binWidth,
     warnings,
     totals,
+    baseIsToken0,
   };
 }

@@ -4,6 +4,10 @@ import './globals.css';
 import { getServerEnv } from '@/lib/env';
 import { AppTokenProvider } from '@/components/AppTokenProvider';
 import { QueryProvider } from '@/components/QueryProvider';
+import { Inter } from "next/font/google";
+import { cn } from "@/lib/utils";
+
+const inter = Inter({subsets:['latin'],variable:'--font-sans'});
 
 export const metadata: Metadata = {
   title: 'LadderFi',
@@ -22,7 +26,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const appToken = getServerEnv().APP_TOKEN;
 
   return (
-    <html lang="en">
+    <html lang="en" className={cn("dark font-sans", inter.variable)}>
       <body>
         {process.env.NODE_ENV === 'production' && (
           <Script

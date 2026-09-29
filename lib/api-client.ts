@@ -2,6 +2,7 @@
 // shapes, so nothing server-side ends up in the browser bundle.
 import type { PlanResult, Strategy, DepositMode } from '@/lib/core';
 import type { PoolRef, PoolState } from '@/lib/adapters/types';
+import type { GeckoPoolSummary } from '@/lib/geckoterminal';
 import { RPC_HICCUP_MESSAGE } from '@/lib/rpc/hiccup';
 
 async function apiFetch(appToken: string, path: string, init?: RequestInit): Promise<Response> {
@@ -131,4 +132,14 @@ export async function prepareWithdraw(
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? 'Failed to prepare withdraw');
   return data;
+}
+
+/** Pools discovered via GeckoTerminal, proxied server-side (see lib/geckoterminal.ts -
+ *  GeckoTerminal doesn't send CORS headers on every response, so this can't be fetched
+ *  directly from the browser). */
+export async function getPools(appToken: string): Promise<GeckoPoolSummary[]> {
+  const res = await apiFetch(appToken, '/api/pools');
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error ?? 'Failed to load pools');
+  return data.pools;
 }

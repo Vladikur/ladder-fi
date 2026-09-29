@@ -1,12 +1,28 @@
 'use client';
 
+import { ArrowLeftRight } from 'lucide-react';
 import { useAccount } from 'wagmi';
 import { useAppToken } from './AppTokenProvider';
 import { getBalance } from '@/lib/api-client';
 import type { PoolListItem } from '@/lib/adapters/pool-search';
-import type { Strategy, DepositMode } from '@/lib/core';
+import { tickToPrice, toUserFacingPrice, type Strategy, type DepositMode } from '@/lib/core';
+import { truncateDecimals } from '@/lib/format';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Slider } from '@/components/ui/slider';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const FEE_LABELS: Record<number, string> = { 100: '0.01%', 500: '0.05%', 3000: '0.3%', 10000: '1%' };
+
+/** base/quote trade places on a swap, so a mode naming one of those roles has to follow. */
+const SWAPPED_DEPOSIT_MODE: Record<DepositMode, DepositMode> = {
+  'base-only': 'quote-only',
+  'quote-only': 'base-only',
+  both: 'both',
+};
 
 export interface LadderConfig {
   baseToken: string;
@@ -64,107 +80,223 @@ export function Configurator({
     set('priceMin', String(priceMaxNum * (1 - pct / 100)));
   }
 
+  function invertPrice(priceStr: string): string {
+    const trimmed = priceStr.trim();
+    if (trimmed === '' || isNaN(Number(trimmed)) || Number(trimmed) === 0) return '';
+    try {
+      return toUserFacingPrice(trimmed, false);
+    } catch {
+      return '';
+    }
+  }
+
+  function swapBaseQuote() {
+    onChange({
+      ...config,
+      baseToken: baseIsToken0 ? token1.address : token0.address,
+      depositMode: SWAPPED_DEPOSIT_MODE[config.depositMode],
+      priceMin: invertPrice(config.priceMax),
+      priceMax: invertPrice(config.priceMin),
+      baseAmount: config.quoteAmount,
+      quoteAmount: config.baseAmount,
+    });
+  }
+
+  let currentPrice = '';
+  try {
+    currentPrice = toUserFacingPrice(tickToPrice(pool.state.tick, token0.decimals, token1.decimals), baseIsToken0);
+  } catch {
+    currentPrice = '';
+  }
+  const currentPriceNum = Number(currentPrice);
+
+  // A bin above the current price can only hold the base token and one below it only the
+  // quote token, so a range parked on one side is unfundable from the other - surfacing
+  // that here beats letting the preview come back silently all-zero.
+  const rangeNeeds =
+    !(currentPriceNum > 0) || !(priceMinNum > 0) || !(priceMaxNum > 0)
+      ? null
+      : priceMinNum >= currentPriceNum
+        ? 'base'
+        : priceMaxNum <= currentPriceNum
+          ? 'quote'
+          : 'both';
+  const fundsBase = config.depositMode !== 'quote-only';
+  const fundsQuote = config.depositMode !== 'base-only';
+  const unfundable = (rangeNeeds === 'base' && !fundsBase) || (rangeNeeds === 'quote' && !fundsQuote);
+
   return (
-    <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
-      <div className="mb-4 flex items-center gap-2 text-sm text-neutral-400">
-        <span className="font-medium text-neutral-100">
-          {token0.symbol} / {token1.symbol}
-        </span>
-        <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs">{FEE_LABELS[pool.ref.fee] ?? `${pool.ref.fee / 10000}%`}</span>
-      </div>
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
-      <label className="flex flex-col gap-1 text-sm">
-        Base token
-        <select value={config.baseToken} onChange={(e) => set('baseToken', e.target.value)} className="rounded border border-neutral-700 bg-neutral-950 px-2 py-1">
-          <option value={token0.address}>{token0.symbol}</option>
-          <option value={token1.address}>{token1.symbol}</option>
-        </select>
-      </label>
-
-      <label className="flex flex-col gap-1 text-sm">
-        Strategy
-        <select value={config.strategy} onChange={(e) => set('strategy', e.target.value as Strategy)} className="rounded border border-neutral-700 bg-neutral-950 px-2 py-1">
-          <option value="bid-ask">Bid-Ask</option>
-          <option value="spot">Spot</option>
-          <option value="curve">Curve</option>
-        </select>
-      </label>
-
-      <label className="flex flex-col gap-1 text-sm">
-        Alpha ({config.alpha.toFixed(1)})
-        <input type="range" min={0.5} max={4.0} step={0.1} value={config.alpha} onChange={(e) => set('alpha', Number(e.target.value))} />
-      </label>
-
-      <label className="flex flex-col gap-1 text-sm">
-        Deposit mode
-        <select value={config.depositMode} onChange={(e) => set('depositMode', e.target.value as DepositMode)} className="rounded border border-neutral-700 bg-neutral-950 px-2 py-1">
-          <option value="both">Both sides</option>
-          <option value="base-only">Base only ({baseSymbol})</option>
-          <option value="quote-only">Quote only ({quoteSymbol})</option>
-        </select>
-      </label>
-
-      <label className="flex flex-col gap-1 text-sm">
-        Bins (N): {config.n}
-        <input type="range" min={1} max={50} value={config.n} onChange={(e) => set('n', Number(e.target.value))} />
-      </label>
-
-      <label className="flex flex-col gap-1 text-sm">
-        Gap (× tick spacing)
-        <input type="number" min={1} max={20} value={config.gapSpacings} onChange={(e) => set('gapSpacings', Number(e.target.value))} className="rounded border border-neutral-700 bg-neutral-950 px-2 py-1" />
-      </label>
-
-      <label className="flex flex-col gap-1 text-sm">
-        Price min ({quoteSymbol} per {baseSymbol})
-        <input value={config.priceMin} onChange={(e) => set('priceMin', e.target.value)} className="rounded border border-neutral-700 bg-neutral-950 px-2 py-1 font-mono" />
-      </label>
-
-      <label className="flex flex-col gap-1 text-sm">
-        Price max ({quoteSymbol} per {baseSymbol})
-        <input value={config.priceMax} onChange={(e) => set('priceMax', e.target.value)} className="rounded border border-neutral-700 bg-neutral-950 px-2 py-1 font-mono" />
-      </label>
-
-      <label className="flex flex-col gap-1 text-sm">
-        Price min (% below max)
-        <input
-          type="number"
-          value={priceMinPercent}
-          onChange={(e) => setPriceMinPercent(e.target.value)}
-          disabled={!(priceMaxNum > 0)}
-          className="rounded border border-neutral-700 bg-neutral-950 px-2 py-1 font-mono disabled:opacity-50"
-        />
-      </label>
-
-      <label className="flex flex-col gap-1 text-sm">
-        Slippage (bps)
-        <input type="number" min={0} max={10000} value={config.slippageBps} onChange={(e) => set('slippageBps', Number(e.target.value))} className="rounded border border-neutral-700 bg-neutral-950 px-2 py-1" />
-      </label>
-
-      {config.depositMode !== 'quote-only' && (
-        <label className="flex flex-col gap-1 text-sm">
-          {baseSymbol} amount
-          <div className="flex gap-1">
-            <input value={config.baseAmount} onChange={(e) => set('baseAmount', e.target.value)} className="w-full rounded border border-neutral-700 bg-neutral-950 px-2 py-1 font-mono" />
-            <button type="button" disabled={!address} onClick={() => setMax('baseAmount')} className="rounded bg-neutral-700 px-2 text-xs disabled:opacity-40">
-              MAX
-            </button>
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">
+            {token0.symbol} / {token1.symbol}
+          </span>
+          <Badge variant="secondary">{FEE_LABELS[pool.ref.fee] ?? `${pool.ref.fee / 10000}%`}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="base-token">Base token</Label>
+            <div className="flex gap-1">
+              <Select value={config.baseToken} onValueChange={(v) => set('baseToken', v)}>
+                <SelectTrigger id="base-token" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={token0.address}>{token0.symbol}</SelectItem>
+                  <SelectItem value={token1.address}>{token1.symbol}</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                type="button"
+                variant="secondary"
+                size="icon"
+                title={`Swap base/quote (${baseSymbol} ↔ ${quoteSymbol})`}
+                onClick={swapBaseQuote}
+              >
+                <ArrowLeftRight className="size-4" />
+              </Button>
+            </div>
           </div>
-        </label>
-      )}
 
-      {config.depositMode !== 'base-only' && (
-        <label className="flex flex-col gap-1 text-sm">
-          {quoteSymbol} amount
-          <div className="flex gap-1">
-            <input value={config.quoteAmount} onChange={(e) => set('quoteAmount', e.target.value)} className="w-full rounded border border-neutral-700 bg-neutral-950 px-2 py-1 font-mono" />
-            <button type="button" disabled={!address} onClick={() => setMax('quoteAmount')} className="rounded bg-neutral-700 px-2 text-xs disabled:opacity-40">
-              MAX
-            </button>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="strategy">Strategy</Label>
+            <Select value={config.strategy} onValueChange={(v) => set('strategy', v as Strategy)}>
+              <SelectTrigger id="strategy" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="bid-ask">Bid-Ask</SelectItem>
+                <SelectItem value="spot">Spot</SelectItem>
+                <SelectItem value="curve">Curve</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-        </label>
-      )}
-      </div>
-    </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="alpha">Alpha ({config.alpha.toFixed(1)})</Label>
+            <Slider
+              id="alpha"
+              min={0.5}
+              max={4.0}
+              step={0.1}
+              value={[config.alpha]}
+              onValueChange={([v]) => set('alpha', v!)}
+              className="h-9"
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="deposit-mode">Deposit mode</Label>
+            <Select value={config.depositMode} onValueChange={(v) => set('depositMode', v as DepositMode)}>
+              <SelectTrigger id="deposit-mode" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="both">Both sides</SelectItem>
+                <SelectItem value="base-only">Base only ({baseSymbol})</SelectItem>
+                <SelectItem value="quote-only">Quote only ({quoteSymbol})</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="n">Bins (N): {config.n}</Label>
+            <Slider id="n" min={1} max={50} step={1} value={[config.n]} onValueChange={([v]) => set('n', v!)} className="h-9" />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="gap-spacings">Gap (× tick spacing)</Label>
+            <Input
+              id="gap-spacings"
+              type="number"
+              min={1}
+              max={20}
+              value={config.gapSpacings}
+              onChange={(e) => set('gapSpacings', Number(e.target.value))}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="price-min">
+              Price min ({quoteSymbol} per {baseSymbol})
+            </Label>
+            <Input id="price-min" value={config.priceMin} onChange={(e) => set('priceMin', e.target.value)} className="font-mono" />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="price-max">
+              Price max ({quoteSymbol} per {baseSymbol})
+            </Label>
+            <Input id="price-max" value={config.priceMax} onChange={(e) => set('priceMax', e.target.value)} className="font-mono" />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="price-min-percent">Price min (% below max)</Label>
+            <Input
+              id="price-min-percent"
+              type="number"
+              value={priceMinPercent}
+              onChange={(e) => setPriceMinPercent(e.target.value)}
+              disabled={!(priceMaxNum > 0)}
+              className="font-mono"
+            />
+          </div>
+
+          {rangeNeeds && (
+            <p className={`col-span-2 text-xs md:col-span-3 ${unfundable ? 'text-destructive' : 'text-muted-foreground'}`}>
+              Current price {truncateDecimals(currentPrice)} {quoteSymbol} per {baseSymbol} —{' '}
+              {rangeNeeds === 'base'
+                ? `range sits entirely above it (ask bins), so it can only be funded with ${baseSymbol}`
+                : rangeNeeds === 'quote'
+                  ? `range sits entirely below it (bid bins), so it can only be funded with ${quoteSymbol}`
+                  : `range straddles it: ask bins take ${baseSymbol}, bid bins take ${quoteSymbol}`}
+              .
+              {unfundable &&
+                ` Deposit mode funds only ${fundsBase ? baseSymbol : quoteSymbol} — switch deposit mode, or move the price range to the other side of the current price.`}
+            </p>
+          )}
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="slippage">Slippage (bps)</Label>
+            <Input
+              id="slippage"
+              type="number"
+              min={0}
+              max={10000}
+              value={config.slippageBps}
+              onChange={(e) => set('slippageBps', Number(e.target.value))}
+            />
+          </div>
+
+          {config.depositMode !== 'quote-only' && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="base-amount">{baseSymbol} amount</Label>
+              <div className="flex gap-1">
+                <Input id="base-amount" value={config.baseAmount} onChange={(e) => set('baseAmount', e.target.value)} className="font-mono" />
+                <Button type="button" variant="secondary" size="sm" disabled={!address} onClick={() => setMax('baseAmount')}>
+                  MAX
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {config.depositMode !== 'base-only' && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="quote-amount">{quoteSymbol} amount</Label>
+              <div className="flex gap-1">
+                <Input id="quote-amount" value={config.quoteAmount} onChange={(e) => set('quoteAmount', e.target.value)} className="font-mono" />
+                <Button type="button" variant="secondary" size="sm" disabled={!address} onClick={() => setMax('quoteAmount')}>
+                  MAX
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

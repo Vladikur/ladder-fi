@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Header } from '@/components/Header';
 import { PositionsPanel } from '@/components/PositionsPanel';
 import { CHAIN_ID } from '@/lib/constants';
+import { Button } from '@/components/ui/button';
 
 export default function AllPositionsPage() {
   const [protocol, setProtocol] = useState<'uniswap-v3' | 'uniswap-v4'>('uniswap-v4');
@@ -16,13 +17,9 @@ export default function AllPositionsPage() {
 
         <div className="flex gap-2">
           {(['uniswap-v3', 'uniswap-v4'] as const).map((p) => (
-            <button
-              key={p}
-              onClick={() => setProtocol(p)}
-              className={`rounded px-3 py-1.5 text-sm ${protocol === p ? 'bg-blue-600' : 'bg-neutral-800'}`}
-            >
+            <Button key={p} variant={protocol === p ? 'default' : 'secondary'} onClick={() => setProtocol(p)}>
               {p === 'uniswap-v3' ? 'Uniswap v3' : 'Uniswap v4'}
-            </button>
+            </Button>
           ))}
         </div>
 

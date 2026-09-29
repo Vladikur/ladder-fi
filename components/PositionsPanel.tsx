@@ -16,6 +16,12 @@ import { wagmiConfig } from '@/lib/wallet/config';
 import { useIsMounted } from '@/lib/wallet/use-mounted';
 import { RPC_HICCUP_MESSAGE } from '@/lib/rpc/hiccup';
 import { describeError } from '@/lib/rpc/errors';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Spinner } from '@/components/ui/spinner';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 type Row = RangedPosition;
 type OpResult = { tokenId: string; hash: string; success: boolean; error?: string };
@@ -240,103 +246,113 @@ export function PositionsPanel({ chainId, protocol, poolRef }: { chainId: number
   }
 
   return (
-    <div className="space-y-3 rounded-lg border border-neutral-800 bg-neutral-900 p-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-medium">Positions</h2>
-        <div className="flex items-center gap-2">
-          {loading && (
-            <span className="flex items-center gap-1 text-xs text-neutral-400">
-              <span className="h-3 w-3 animate-spin rounded-full border-2 border-neutral-500 border-t-transparent" />
-              Loading…
-            </span>
-          )}
-          {!loading && secondsUntilRefresh !== null && (
-            <span className="text-xs text-neutral-500">Next update in {secondsUntilRefresh}s</span>
-          )}
-          <button onClick={() => void refresh()} className="rounded bg-neutral-700 px-2 py-1 text-xs">
-            Refresh
-          </button>
-        </div>
-      </div>
-
-      {aggregate && (
-        <div className="flex gap-4 text-sm text-neutral-400">
-          <span>Total: {String(aggregate.total)}</span>
-          <span>In range: {String(aggregate.inRange)}</span>
-          {currentPrice !== null && firstRow && (
-            <span>
-              Current price: <span className="font-mono">{truncateDecimals(currentPrice)}</span> ({firstRow.token1.symbol}/{firstRow.token0.symbol})
-            </span>
-          )}
-          <span>Current yield: {aggregateYieldPct !== null ? `${aggregateYieldPct.toFixed(2)}%` : 'n/a'}</span>
-        </div>
-      )}
-
-      {progress && <p className="text-sm text-neutral-400">{progress}</p>}
-      {error && <p className="text-sm text-red-400">{error}</p>}
-
-      {!mounted || !isConnected ? (
-        <p className="text-sm text-amber-400">Connect a wallet to view and manage positions.</p>
-      ) : (
-        <>
-          <table className="w-full text-xs">
-            <thead className="text-left text-neutral-400">
-              <tr>
-                <th>
-                  <input type="checkbox" checked={rows.length > 0 && selected.size === rows.length} onChange={toggleAll} />
-                </th>
-                <th>Token ID</th>
-                <th>Pair</th>
-                <th>Price range</th>
-                <th>Status</th>
-                <th>Liquidity</th>
-                <th>Fees owed</th>
-                <th>Yield</th>
-              </tr>
-            </thead>
-            <tbody>
-              {valued.map(({ row: r, liquidityUsd, feesUsd, yieldPct }) => (
-                <tr key={r.tokenId.toString()} className="border-t border-neutral-800">
-                  <td>
-                    <input type="checkbox" checked={selected.has(r.tokenId.toString())} onChange={() => toggle(r.tokenId.toString())} />
-                  </td>
-                  <td className="font-mono">{r.tokenId.toString()}</td>
-                  <td>
-                    {r.token0.symbol}/{r.token1.symbol}
-                  </td>
-                  <td className="font-mono">
-                    {truncateDecimals(tickToPrice(r.tickLower, r.token0.decimals, r.token1.decimals))} →{' '}
-                    {truncateDecimals(tickToPrice(r.tickUpper, r.token0.decimals, r.token1.decimals))}
-                  </td>
-                  <td>{r.rangeStatus}</td>
-                  <td className="font-mono">{liquidityUsd !== null ? formatUsd(liquidityUsd) : r.liquidity.toString()}</td>
-                  <td className="font-mono">{feesUsd !== null ? formatUsd(feesUsd) : `${r.tokensOwed0} / ${r.tokensOwed1}`}</td>
-                  <td className="font-mono">{yieldPct !== null ? `${yieldPct.toFixed(2)}%` : '-'}</td>
-                </tr>
-              ))}
-              {rows.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="py-2 text-neutral-500">
-                    No positions found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-
-          <div className="flex gap-2">
-            <button disabled={busy || selected.size === 0} onClick={doCollect} className="rounded bg-blue-600 px-3 py-1.5 text-sm disabled:opacity-40">
-              Collect fees
-            </button>
-            <button disabled={busy || selected.size === 0} onClick={() => doWithdraw(10_000)} className="rounded bg-red-700 px-3 py-1.5 text-sm disabled:opacity-40">
-              Withdraw full (burn)
-            </button>
-            <button disabled={busy || selected.size === 0} onClick={() => doWithdraw(5_000)} className="rounded bg-neutral-700 px-3 py-1.5 text-sm disabled:opacity-40">
-              Withdraw 50%
-            </button>
+    <Card>
+      <CardContent className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-medium">Positions</h2>
+          <div className="flex items-center gap-2">
+            {loading && (
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Spinner className="size-3" />
+                Loading…
+              </span>
+            )}
+            {!loading && secondsUntilRefresh !== null && (
+              <span className="text-xs text-muted-foreground">Next update in {secondsUntilRefresh}s</span>
+            )}
+            <Button onClick={() => void refresh()} size="sm" variant="secondary">
+              Refresh
+            </Button>
           </div>
-        </>
-      )}
-    </div>
+        </div>
+
+        {aggregate && (
+          <div className="flex gap-4 text-sm text-muted-foreground">
+            <span>Total: {String(aggregate.total)}</span>
+            <span>In range: {String(aggregate.inRange)}</span>
+            {currentPrice !== null && firstRow && (
+              <span>
+                Current price: <span className="font-mono">{truncateDecimals(currentPrice)}</span> ({firstRow.token1.symbol}/{firstRow.token0.symbol})
+              </span>
+            )}
+            <span>Current yield: {aggregateYieldPct !== null ? `${aggregateYieldPct.toFixed(2)}%` : 'n/a'}</span>
+          </div>
+        )}
+
+        {progress && <p className="text-sm text-muted-foreground">{progress}</p>}
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
+        {!mounted || !isConnected ? (
+          <Alert>
+            <AlertDescription>Connect a wallet to view and manage positions.</AlertDescription>
+          </Alert>
+        ) : (
+          <>
+            <div className="rounded-md border">
+              <Table className="text-xs">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>
+                      <Checkbox checked={rows.length > 0 && selected.size === rows.length} onCheckedChange={toggleAll} />
+                    </TableHead>
+                    <TableHead>Token ID</TableHead>
+                    <TableHead>Pair</TableHead>
+                    <TableHead>Price range</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Liquidity</TableHead>
+                    <TableHead>Fees owed</TableHead>
+                    <TableHead>Yield</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {valued.map(({ row: r, liquidityUsd, feesUsd, yieldPct }) => (
+                    <TableRow key={r.tokenId.toString()}>
+                      <TableCell>
+                        <Checkbox checked={selected.has(r.tokenId.toString())} onCheckedChange={() => toggle(r.tokenId.toString())} />
+                      </TableCell>
+                      <TableCell className="font-mono">{r.tokenId.toString()}</TableCell>
+                      <TableCell>
+                        {r.token0.symbol}/{r.token1.symbol}
+                      </TableCell>
+                      <TableCell className="font-mono">
+                        {truncateDecimals(tickToPrice(r.tickLower, r.token0.decimals, r.token1.decimals))} →{' '}
+                        {truncateDecimals(tickToPrice(r.tickUpper, r.token0.decimals, r.token1.decimals))}
+                      </TableCell>
+                      <TableCell>{r.rangeStatus}</TableCell>
+                      <TableCell className="font-mono">{liquidityUsd !== null ? formatUsd(liquidityUsd) : r.liquidity.toString()}</TableCell>
+                      <TableCell className="font-mono">{feesUsd !== null ? formatUsd(feesUsd) : `${r.tokensOwed0} / ${r.tokensOwed1}`}</TableCell>
+                      <TableCell className="font-mono">{yieldPct !== null ? `${yieldPct.toFixed(2)}%` : '-'}</TableCell>
+                    </TableRow>
+                  ))}
+                  {rows.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={8} className="py-2 text-muted-foreground">
+                        No positions found.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+
+            <div className="flex gap-2">
+              <Button disabled={busy || selected.size === 0} onClick={doCollect} size="sm">
+                Collect fees
+              </Button>
+              <Button disabled={busy || selected.size === 0} onClick={() => doWithdraw(10_000)} size="sm" variant="destructive">
+                Withdraw full (burn)
+              </Button>
+              <Button disabled={busy || selected.size === 0} onClick={() => doWithdraw(5_000)} size="sm" variant="secondary">
+                Withdraw 50%
+              </Button>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }

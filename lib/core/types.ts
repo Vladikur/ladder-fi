@@ -76,6 +76,7 @@ export type PlanWarningCode =
   | 'n-reduced'
   | 'bin-trimmed'
   | 'dust-amount'
+  | 'side-unfunded'
   | 'bin-width-floor';
 
 export interface PlanWarning {

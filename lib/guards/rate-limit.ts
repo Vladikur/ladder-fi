@@ -24,6 +24,9 @@ const TIERS = {
   balance: { capacity: 30, refillPerSec: 60 / 60 },
   collect: { capacity: 10, refillPerSec: 10 / 60 },
   withdraw: { capacity: 10, refillPerSec: 10 / 60 },
+  // Backed by lib/geckoterminal.ts's own cache, so this tier only needs to survive a
+  // client retry burst, not steady polling.
+  pools: { capacity: 20, refillPerSec: 20 / 60 },
 } satisfies Record<string, { capacity: number; refillPerSec: number }>;
 
 type Tier = keyof typeof TIERS;
